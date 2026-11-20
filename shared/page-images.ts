@@ -14,6 +14,8 @@
  * Sem pdf.js aqui: os ids dos operadores (`OPS`) e a matriz do viewport são passados por quem chama.
  */
 
+import { popqLayoutToLine } from './tables'
+
 export interface ImageRect {
   x: number
   y: number
@@ -325,7 +327,8 @@ export function imageIdsIn(text: string): string[] {
 
 /** Texto completo para o segmentador: `[[página N]]` + texto da página com as imagens resolvidas. */
 export function fullTextWithImages(pages: { page: number; text: string }[], notes: Record<string, ImageNote | undefined> = {}): string {
-  return pages.map((p) => `\n[[página ${p.page}]]\n${resolveImageMarks(p.text, notes)}`).join('\n')
+  // quadro POP-Q extraído como texto solto ("Aa Ba C" / "+1 cm +3 cm -6 cm" / …) → linha canônica (shared/tables.ts)
+  return pages.map((p) => `\n[[página ${p.page}]]\n${resolveImageMarks(popqLayoutToLine(p.text), notes)}`).join('\n')
 }
 
 /**

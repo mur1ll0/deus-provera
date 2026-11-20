@@ -118,8 +118,10 @@ describe('importação de PDF com visão (cliente ↔ rota ↔ grafo)', () => {
     const drafts = Object.values(view.drafts ?? {})
     expect(drafts).toHaveLength(2)
     for (const d of drafts) {
-      expect(d.enunciado).toContain('[Imagem p.')
-      expect(d.enunciado).toContain('POP-Q — Aa -1; Ba +1; C -5') // sinal normalizado no servidor
+      expect(d.enunciado).toMatch(/\[Imagem p\. \d+: quadro POP-Q\]/)
+      // grade Markdown que a tela desenha (shared/tables.ts), com o sinal normalizado no servidor
+      expect(d.enunciado).toContain('| **Aa** | **Ba** | **C** |\n| -1 | +1 | -5 |')
+      expect(d.descricao_imagem).toContain('POP-Q — Aa -1; Ba +1; C -5') // descrição guarda a linha compacta
       expect(d.tem_imagem).toBe(true)
       expect(d.flags).toContain('Processado sem IA — revise') // estruturação indisponível → fallback
     }

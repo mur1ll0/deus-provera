@@ -3,6 +3,7 @@ import type { QuestionItem, Visibility } from '@shared/domain'
 import { inspectText } from '@shared/guardrails'
 import { cleanItemLabel, type ImportFile, type ImportQuestion } from '@shared/schemas/import'
 import { heuristicKeyPoints, type SegmentedQuestion } from '@shared/segmenter'
+import { tablesForDisplay } from '@shared/tables'
 import { classifyQuestion } from '@/mocks/ai'
 import { emptyItem, uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
 import type { ServerCard, ServerDraft } from './importJob'
@@ -55,13 +56,15 @@ export function draftsFromSegments(items: SegmentedQuestion[], visibility: Visib
 
   for (const seg of items) {
     const flags = new Set<string>()
-    const stem = guard(seg.stem, flags) ?? seg.stem
+    // POP-Q (linha canônica) → grade Markdown que a tela desenha (shared/tables.ts)
+    const stem = tablesForDisplay(guard(seg.stem, flags) ?? seg.stem)
     const qItems: QuestionItem[] = seg.items.map((it) => {
-      const answer = guard(it.answer, flags)
+      const guarded = guard(it.answer, flags)
+      const answer = guarded ? tablesForDisplay(guarded) : guarded
       return {
         id: uid('it'),
         label: it.label,
-        prompt: guard(it.prompt, flags) ?? it.prompt,
+        prompt: tablesForDisplay(guard(it.prompt, flags) ?? it.prompt),
         type: 'discursiva',
         expectedAnswer: answer,
         keyPoints: heuristicKeyPoints(answer),

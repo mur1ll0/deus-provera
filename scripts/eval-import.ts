@@ -20,6 +20,7 @@ import './load-env'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fullTextWithImages, type ImageNote } from '../shared/page-images'
 import { segmentQuestions } from '../shared/segmenter'
+import { popqGridToLine } from '../shared/tables'
 import type { PageImageState } from '../server/ai/pipelines/import-graph'
 import { parseGabarito, type GoldQuestion } from './gabarito'
 import { openPdfWithImages } from './pdf-images-node'
@@ -100,7 +101,8 @@ const normVal = (v: string) => {
 /** Quadros POP-Q de um texto (um por "[Imagem p. N: POP-Q — …]" ou trecho após "POP-Q"). */
 function popqSets(text: string): Record<string, string>[] {
   const out: Record<string, string>[] = []
-  for (const chunk of fold(text).split(/pop-?q/).slice(1)) {
+  // o rascunho traz a grade Markdown (shared/tables.ts › tablesForDisplay): volta à linha canônica para medir
+  for (const chunk of fold(popqGridToLine(text)).split(/pop-?q/).slice(1)) {
     const body = chunk.split(/\]|\n\n/)[0]
     const set: Record<string, string> = {}
     for (const m of body.matchAll(/(?:^|[^a-z])(aa|ba|c|hg|gh|cp|pb|cvt|tvl|ap|bp|d)\s*[:=]?\s*([+\-−–]?\s*\d+(?:[.,]\d+)?|—|-{2,3})/g)) {

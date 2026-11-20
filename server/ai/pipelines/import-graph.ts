@@ -3,6 +3,7 @@ import { inspectText, wrapUntrusted, type RiskLevel } from '../../../shared/guar
 import { fullTextWithImages, imageDescriptionsIn, missingImageBrackets, type ImageKind } from '../../../shared/page-images'
 import { cleanItemLabel, importQuestionSchema, type ImportQuestion } from '../../../shared/schemas/import'
 import { heuristicKeyPoints, segmentQuestions, type SegmentedQuestion } from '../../../shared/segmenter'
+import { tablesForDisplay } from '../../../shared/tables'
 import { AiQuotaExhaustedError, AiUnavailableError, callStructured, type AttemptLog } from '../client'
 import { END, StateGraph, type GraphState } from '../graph'
 import { CLASSIFY_SYSTEM, DISTRACTORS_SYSTEM, GUARD_SYSTEM, STRUCTURE_SYSTEM } from '../prompts'
@@ -190,12 +191,12 @@ function draftFromSegment(b: Block, flags: string[]): DraftItem {
     disciplina: 'Sem disciplina',
     ...imageFields(b.text),
     rotulo: b.seg.sourceLabel ?? null,
-    enunciado: b.seg.stem.slice(0, 12000) || '(enunciado não identificado)',
+    enunciado: tablesForDisplay(b.seg.stem).slice(0, 12000) || '(enunciado não identificado)',
     perguntas: b.seg.items.map((it) => ({
       rotulo: it.label ?? null,
-      texto: it.prompt,
+      texto: tablesForDisplay(it.prompt),
       tipo: 'discursiva' as const,
-      resposta_esperada: it.answer ?? null,
+      resposta_esperada: it.answer ? tablesForDisplay(it.answer) : null,
       pontos_chave: heuristicKeyPoints(it.answer),
       alternativas: null,
     })),
@@ -383,8 +384,14 @@ async function structureBatch(
         area: 'Sem área',
         disciplina: 'Sem disciplina',
         rotulo: q.rotulo ?? b.seg.sourceLabel ?? null,
-        enunciado: lost.length ? `${q.enunciado}\n${lost.join('\n')}`.slice(0, 12000) : q.enunciado,
-        perguntas: q.perguntas.map((p) => ({ ...p, rotulo: cleanItemLabel(p.rotulo) })),
+        // POP-Q (linha canônica) e tabelas da visão → grade/tabela Markdown que a tela desenha (shared/tables.ts)
+        enunciado: tablesForDisplay(lost.length ? `${q.enunciado}\n${lost.join('\n')}` : q.enunciado).slice(0, 12000),
+        perguntas: q.perguntas.map((p) => ({
+          ...p,
+          rotulo: cleanItemLabel(p.rotulo),
+          texto: tablesForDisplay(p.texto),
+          resposta_esperada: p.resposta_esperada ? tablesForDisplay(p.resposta_esperada) : p.resposta_esperada,
+        })),
         dificuldade: q.dificuldade,
         tem_imagem: q.tem_imagem || !!img.tem_imagem,
         descricao_imagem: img.descricao_imagem,

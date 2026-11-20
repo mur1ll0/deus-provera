@@ -1,6 +1,7 @@
 import { getDocument, GlobalWorkerOptions, OPS } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { composePageText, findImageRects, imageId, usefulImageRects, type ImageRect, type TextRun } from '@shared/page-images'
+import { popqLayoutToLine } from '@shared/tables'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -72,7 +73,8 @@ export async function extractPdf(file: File, onProgress?: (done: number, total: 
     fileName: file.name,
     sizeBytes: file.size,
     pages,
-    fullText: pages.map((p) => `\n[[página ${p.page}]]\n${p.text}`).join('\n'),
+    // quadro POP-Q extraído como texto solto → linha canônica (mesma regra do servidor, shared/tables.ts)
+    fullText: pages.map((p) => `\n[[página ${p.page}]]\n${popqLayoutToLine(p.text)}`).join('\n'),
     file,
   }
 }

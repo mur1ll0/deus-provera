@@ -244,3 +244,18 @@ As transcrições das imagens são reaproveitadas da rodada de visão. Ao todo f
 - **Hipótese em aberto:** a métrica de conteúdo da U3 olha `descricao_imagem`, e não o enunciado. A IA incorpora o texto da foto ao enunciado, o que é correto, mas some da descrição. Investigar antes de mexer no grafo.
 
 **Variância observada:** entre duas rodadas completas iguais, menos a salvaguarda, as métricas de texto variaram ±2–4 pontos e as de imagem até 17 pontos na U2. Para decidir mudanças no pipeline, compare pelo menos 2 rodadas.
+
+## 9. Tabelas, gráficos, fórmulas e POP-Q na tela (T066) — 2026-11-20
+
+O quadro POP-Q continua circulando no pipeline como a linha `POP-Q — Aa …; D …` (a avaliação mede nesse formato); só o **rascunho** da revisão ganha a grade em tabela Markdown, e a avaliação a converte de volta (`popqGridToLine`) antes de medir. O que muda nas métricas é só o quadro em **texto solto** (`popqLayoutToLine`), ausente nos dois PDFs do gabarito (lá o POP-Q é imagem).
+
+| Rodada | Unidade II | III UNIDADE |
+|---|---|---|
+| Sem IA (`npm run eval:import`) | recall 92,1% · precisão 96,2% · perguntas 96,6% · enunciado 95,3% · pergunta 87,8% · resposta 89,9% — **idêntico ao §4** | 90,4% · 95,1% · 90,7% · 97,8% · 91,3% · 95,0% — **idêntico ao §4** |
+| Sem IA + visão (`--vision --reuse`) | recall 92,1% · precisão 97,2% · imagens detectadas 97,9% · conteúdo 85,1% · POP-Q exato 95,1% (39/41) · pontos 95,3% | recall 91,6% · precisão 95,0% · imagens 87,0% · conteúdo 52,2% |
+
+A rodada com visão deu **os mesmos números com e sem a mudança** (rodada de controle sem `popqLayoutToLine`, mesmas transcrições). A diferença para a tabela do §7.1 (ex.: precisão U3 96,0% → 95,0%, pontos POP-Q 95,6% → 95,3%) vem das transcrições salvas em `visao-u*.json`, que são de outra rodada, não deste código.
+
+**PDF de OSCE** (`Questoes_OSCE_Ginecologia_Respondidas_Fonte_Maior.pdf`, POP-Q como texto, sem gabarito): os **8 quadros** das questões 01, 04, 14, 17, 22, 28 (dois casos) e 44 viram a linha canônica e, no rascunho, **8 grades** — inclusive os dois da Q28, que o segmentador junta numa mesma linha (`POPQ_LINE` termina no valor do ponto D).
+
+**Com IA de estruturação:** não medido nesta data. A rodada `--ai --vision --batches 10 --pdf u2` parou na 1ª chamada com 429 `free-models-per-day` (cota diária do OpenRouter esgotada). O caminho da IA está coberto por teste sem rede (`structure-parallel.test.ts`: linha POP-Q e tabela da visão viram tabelas no rascunho). Rodar `npm run eval:import -- --ai --vision --reuse --batches 10 --pdf u2` (sem o cache `pred-ia-visao-u2.json`) quando a cota voltar e comparar com o §7.1 (POP-Q exato 88,9% no trecho).

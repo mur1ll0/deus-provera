@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * concorrência real, ordem do documento preservada, fallback por lote e cota esgotada no meio do passo.
  */
 
-const h = vi.hoisted(() => ({ inFlight: 0, maxInFlight: 0, calls: 0, failBatchWith: null as string | null, quotaBatch: null as string | null }))
+const h = vi.hoisted(() => ({ inFlight: 0, maxInFlight: 0, calls: 0, failBatchWith: null as string | null, quotaBatch: null as string | null, popq: false }))
+const POPQ_LINE = 'POP-Q — Aa +1; Ba +3; C -6; HG 4; CP 3; CVT 8; Ap -3; Bp -3; D -8'
 
 vi.mock('../ai/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../ai/client')>()
@@ -25,7 +26,14 @@ vi.mock('../ai/client', async (importOriginal) => {
       call.onAttempt?.({ task: 'structure', model: 'm:free', ok: true, latencyMs: 1 })
       return {
         value: {
-          questoes: ids.map((id) => ({ bloco_id: id, rotulo: null, enunciado: `Enunciado ${id}`, perguntas: [{ rotulo: null, texto: `Pergunta ${id}`, tipo: 'discursiva', resposta_esperada: `Resposta ${id}`, pontos_chave: [], alternativas: null }], dificuldade: 'media', tem_imagem: false })),
+          questoes: ids.map((id) => ({
+            bloco_id: id,
+            rotulo: null,
+            enunciado: h.popq ? `Enunciado ${id}. ${POPQ_LINE}` : `Enunciado ${id}`,
+            perguntas: [{ rotulo: null, texto: `Pergunta ${id}`, tipo: 'discursiva', resposta_esperada: h.popq ? `Resposta ${id} [Imagem p. 2: Exame | Valor / Hb | 9,8]` : `Resposta ${id}`, pontos_chave: [], alternativas: null }],
+            dificuldade: 'media',
+            tem_imagem: false,
+          })),
           descartados: [],
           alertas: [],
         },
@@ -68,6 +76,7 @@ beforeEach(() => {
   h.inFlight = h.maxInFlight = h.calls = 0
   h.failBatchWith = null
   h.quotaBatch = null
+  h.popq = false
 })
 
 describe('structure em paralelo', () => {
@@ -104,6 +113,15 @@ describe('structure em paralelo', () => {
     expect(h.calls).toBe(2)
     expect(Object.keys(s.drafts)).toEqual(['b1', 'b2'])
     expect(s.pendingBatches).toEqual([['b3'], ['b4']])
+  })
+
+  it('rascunho da IA: linha POP-Q vira a grade e tabela da visão vira tabela Markdown (shared/tables.ts)', async () => {
+    h.popq = true
+    const s = await importGraph.step(segmented(1), ctx())
+    expect(s.drafts.b1.enunciado).toBe(
+      'Enunciado b1.\nPOP-Q:\n| **Aa** | **Ba** | **C** |\n| +1 | +3 | -6 |\n| **HG** | **CP** | **CVT** |\n| 4 | 3 | 8 |\n| **Ap** | **Bp** | **D** |\n| -3 | -3 | -8 |',
+    )
+    expect(s.drafts.b1.perguntas[0].resposta_esperada).toBe('Resposta b1\n[Imagem p. 2: tabela]\n| Exame | Valor |\n| Hb | 9,8 |')
   })
 
   it('cota esgotada já no 1º lote: o passo falha com 429 (a rota salva o checkpoint)', async () => {

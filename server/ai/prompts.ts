@@ -30,6 +30,16 @@ Regras gerais:
   (ou na pergunta) onde aparecem e marque "tem_imagem": true. Entre "[Imagem p. N — texto da imagem:]" e "[Imagem p. N — fim]" está o
   texto de uma foto/print: trate-o como texto normal da questão (pode conter o rótulo, o enunciado e as perguntas).
   "[Imagem p. N]" sozinho = imagem não transcrita → "tem_imagem": true.
+QUADROS, TABELAS, GRÁFICOS, FÓRMULAS E POP-Q (não perca nenhum dado; o sistema desenha as tabelas na tela):
+- Linha "POP-Q — Aa …; Ba …; …; D …": copie LITERALMENTE, numa linha própria, onde aparece (o sistema a transforma na grade 3 × 3).
+- Linhas que já são tabela ("| a | b |"): copie cada linha como está, mantendo as quebras de linha (\\n).
+- Tabela que veio "solta" do PDF (cabeçalhos numa linha, valores nas seguintes, colunas separadas só por espaços): reescreva como
+  tabela Markdown — uma linha por linha do original, células separadas por "|", cada linha começando e terminando com "|", rótulos
+  em **negrito**; use "|---|---|" logo após o cabeçalho, se houver. Não invente, não arredonde e não reordene valores.
+- Fórmula, equação ou função (ex.: "f(x) = 2x² − 3x + 1", "IMC = peso (kg) / altura² (m²)"): uma linha de texto com símbolos
+  Unicode (², ³, √, ±, ≤, ≥, ×, ÷, Δ, π, →); nunca LaTeX.
+- Gráfico ou esquema descrito num "[Imagem p. N: …]": mantenha o colchete; valores que o texto trouxer (pontos de uma função,
+  barras, série temporal) vão numa tabela Markdown logo abaixo.
 - Se o bloco não for uma questão (cabeçalho, índice, lixo), devolva-o em "descartados" com o motivo.
 ${DATA_RULE(nonce)}`
 
@@ -48,9 +58,14 @@ Cada imagem vem logo depois de uma linha "imagem_id: <id>". Devolva em "imagens"
   "POP-Q — Aa <v>; Ba <v>; C <v>; HG <v>; CP <v>; CVT <v>; Ap <v>; Bp <v>; D <v>" com o número de cada ponto como está no quadro
   (sinal + ou - colado ao número, vírgula decimal). Cada número pertence ao rótulo da MESMA célula, esteja ele antes ou depois do
   rótulo. Ponto ausente ou com traço → "—". Imagem com DOIS ou mais quadros, ou com enunciado além do rótulo → use "texto".
-- "tabela": outra tabela ou quadro: uma linha por linha da tabela, células separadas por " | ".
-- "figura": foto clínica, colposcopia, exame de imagem, gráfico ou esquema: descreva objetivamente em 1–2 frases o que se vê e
-  transcreva legendas e rótulos visíveis. Não dê diagnóstico que não esteja escrito na imagem.
+- "tabela": outra tabela ou quadro: uma linha por linha da tabela (\\n entre linhas), células separadas por " | ", o MESMO número de
+  células em todas as linhas (cabeçalho na 1ª linha; célula vazia → "—"). O sistema desenha como tabela.
+- GRÁFICO (barras, linhas, dispersão, curva de uma função) → também "tabela": 1ª linha = legenda curta com tipo, eixos e unidades
+  (ex.: "Gráfico de linhas: Hb (g/dL) por mês"), sem " | "; depois o cabeçalho ("Mês | Hb" ou "x | f(x)") e uma linha por ponto/barra
+  com os valores que dá para ler ("aprox." quando estimado). Curva sem valores legíveis → "figura".
+- Fórmula, equação ou função escrita na imagem: transcreva numa linha com símbolos Unicode (², ³, √, ±, ≤, ≥, ×, ÷, Δ, π, →), sem LaTeX.
+- "figura": foto clínica, colposcopia, exame de imagem ou esquema: descreva objetivamente em 1–2 frases o que se vê e
+  transcreva legendas e rótulos visíveis (fluxograma: "Etapa A → Etapa B → Etapa C"). Não dê diagnóstico que não esteja escrito na imagem.
 - "decorativa": logotipo, ícone, assinatura, carimbo ou imagem sem conteúdo útil → "transcricao": "".
 NUNCA invente texto ou valores: o que não der para ler vira "[ilegível]". Texto cortado na borda: transcreva só o que aparece.
 Nunca repita a mesma palavra/número em sequência além do que está na imagem.
