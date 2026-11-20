@@ -31,7 +31,6 @@ Roteiro sugerido para validar:
    - Para usar o **gabarito de referência** (questões reais extraídas dos 2 PDFs, com pontos de acerto e alternativas): *Usar meu agente de IA → Carregar arquivo* → `samples/private/gabarito-iii-unidade.json` (gere com `npm run gabarito:build`).
 3. **Importar → Usar meu agente de IA**: copie o prompt, ou clique *Usar exemplo* → *Validar e revisar*.
 4. **Simulados**: monte um treino (revelar a cada questão + dicas) e uma prova (tempo limite, gabarito no fim) → veja o **resultado** com tempo por questão e correção de discursivas.
-5. *Restaurar dados de demonstração* (barra lateral) volta ao estado inicial.
 
 ## Documentação
 

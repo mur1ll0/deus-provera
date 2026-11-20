@@ -1,10 +1,9 @@
 import clsx from 'clsx'
-import { FileUp, LayoutDashboard, Library, LogOut, RotateCcw, Timer, Trophy } from 'lucide-react'
+import { FileUp, LayoutDashboard, Library, LogOut, Timer, Trophy } from 'lucide-react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 import { Logo } from '@/components/Logo'
 import { Avatar } from '@/components/ui'
 import { OnboardingNotice } from '@/features/profile/OnboardingNotice'
-import { useStore } from '@/mocks/store'
 import { initials, useAuth } from './auth-context'
 
 const NAV = [
@@ -17,8 +16,7 @@ const NAV = [
 
 export function AppLayout() {
   // Sessão garantida pelo RequireAuth (router.tsx).
-  const { user, profile, mode, signOut } = useAuth()
-  const { resetDemo } = useStore()
+  const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
   const name = profile?.displayName || user?.name || ''
   const subtitle = [profile?.institution, profile?.course].filter(Boolean).join(' · ') || user?.email
@@ -53,9 +51,6 @@ export function AppLayout() {
           ))}
         </nav>
         <div className="mt-auto space-y-3">
-          <button onClick={resetDemo} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-muted hover:bg-gold-50 hover:text-gold-600">
-            <RotateCcw size={14} /> Restaurar dados de demonstração{mode === 'real' && ' (simulados)'}
-          </button>
           <div className="flex items-center gap-3 rounded-2xl border border-line bg-white p-3">
             <Link to="/perfil" className="flex min-w-0 flex-1 items-center gap-3 rounded-xl hover:text-brand-700" title="Seu perfil">
               <Avatar seed={initials(name)} src={user?.image} />
