@@ -50,7 +50,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T031 Hook `useImportJob`: cria job, chama `/run` em loop (até `revisao`/`falhou`/429), mostra o nó atual (GET a cada 4 s durante o `/run`), permite retomar o job `processando` salvo no navegador (`src/features/import/useImportJob.ts`, fluxo em `src/features/import/importJob.ts`, tela em `src/features/import/JobProgress.tsx`) + teste de ponta a ponta cliente ↔ rota ↔ grafo (`src/features/import/__tests__/importJob.test.ts`)
 - [x] T032 Com sessão real, o PDF vai pelo job real (`draftsFromServerJob` monta a revisão com os cards e sinalizações da IA); `runMockPipeline`/`classifyQuestion` ficam só no modo protótipo sem API (`src/features/import/ImportPage.tsx`, `src/features/import/drafts.ts`)
 - [x] T033 Classificar em lotes de até 20 questões e mesclar os grupos por área/disciplina/assunto (`server/ai/pipelines/import-graph.ts` › `classify`, `mergeClassification`; testes em `server/__tests__/classify.test.ts`)
-- [ ] T034 Dividir no cliente textos > 4 MB em vários jobs e truncar páginas > 60.000 caracteres com aviso (`src/features/import/useImportJob.ts`)
+- [ ] T034 Dividir no cliente textos > 4 MB em vários jobs e truncar páginas > 60.000 caracteres com aviso (`src/features/import/useImportJob.ts`) — parcial (2026-11-20): `pdfJobPayload()` já corta em 60.000 caracteres por página, mas sem aviso; a divisão em vários jobs não existe
 - [x] T035 Lista "Importações não salvas" (processando ou em revisão) na página de importação (`GET /api/imports`, `server/routes/imports.ts`, `src/features/import/ImportPage.tsx` › `OpenImports`)
 - [x] T036 Mensagem de cota esgotada (429) sugerindo o agente externo, com "Tentar continuar" do checkpoint (`src/features/import/JobProgress.tsx`)
 - [ ] T037 Conjunto de avaliação PT-BR (20 blocos dos PDFs de exemplo com gabarito estruturado) + script `npm run ai:eval` (`server/ai/eval/`, `package.json`) para SC-002/SC-004
@@ -67,8 +67,8 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 
 - [x] T043 Botões "Gerar incorretas com IA" (por questão) e "Gerar alternativas p/ N discursivas" (lote) — simulados (`src/features/questions/QuestionEditor.tsx`, `src/features/import/ReviewBoard.tsx`, `src/mocks/ai.ts`)
 - [x] T044 Nós `plan-distractors`/`distractors` com `checkDistractors` (`server/ai/pipelines/import-graph.ts`)
-- [ ] T045 `POST /api/ai/distractors` (até 6 questões por chamada, orçamento, preserva a correta informada) (`server/routes/ai.ts`)
-- [ ] T046 Ligar o editor e o lote ao endpoint real, com tratamento de 503/429 (`src/features/questions/QuestionEditor.tsx`, `src/features/import/ReviewBoard.tsx`)
+- [x] T045 `POST /api/ai/distractors` (até 6 questões por chamada, orçamento, preserva a correta informada) (`server/routes/ai.ts`) — com `reserveAiRequest` e 503 quando a IA está indisponível (spec 005 T037)
+- [x] T046 Ligar o editor e o lote ao endpoint real, com tratamento de 503/429 (`src/features/questions/QuestionEditor.tsx`, `src/features/import/ReviewBoard.tsx`) — via `useDistractors()` (`src/lib/ai.ts`); a IA simulada fica só no modo protótipo (selo DEMO)
 
 ## Fase 7 — US5 Cadastro manual (P2)
 
@@ -87,16 +87,16 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T060 No hook `useImportJob` (T031): criar o job com `pdfJobPayload()`, chamar `renderPageImages()` + `uploadPageImages()` antes do loop de `/run`, mostrar o progresso da visão (recortes e lotes) e tratar 429 (seguir sem visão); opção "Transcrever as N imagens com IA" na tela de PDF (`src/features/import/importJob.ts`, `src/features/import/useImportJob.ts`, `src/features/import/ImportPage.tsx`). **Não testado ao vivo** contra Neon + login Google (credenciais ainda não configuradas no `.env`)
 - [ ] T051 [P] Conjunto de ataques de injeção embutidos em PDF/JSON + teste de que a saída não muda (SC-005) (`server/__tests__/injection.test.ts`)
 - [x] T052 [P] Teste E2E do fluxo agente externo → revisão → salvar (Playwright) (`e2e/import.spec.ts`) — `e2e/importacao.spec.ts`: agente externo → revisão → salvar → banco; reimportar = duplicata. Com `E2E_AI=1`, os PDFs de exemplo pela tela com a IA real
-- [ ] T053 Medir SC-001 (tempo de extração) e SC-002 (requisições por PDF) e registrar em `docs/05-pipeline-ia.md`
+- [ ] T053 Medir SC-001 (tempo de extração) e SC-002 (requisições por PDF) e registrar em `docs/05-pipeline-ia.md` — parcial: tempos e requisições por lote dos dois PDFs já estão em docs/10 §5–§8; falta consolidar SC-001/SC-002 no docs/05
 - [ ] T054 Remover `runMockPipeline`, `classifyText` e `aiGenerateDistractors` mock quando os endpoints reais estiverem ativos (`src/mocks/ai.ts`)
 
 ## Definição de pronto
 
-- [ ] Os três métodos importam e salvam questões reais no Neon, com revisão obrigatória
-- [ ] `Unidade II.pdf` e `III UNIDADE.pdf` processados de ponta a ponta com IA real e via agente externo
-- [ ] Falha total de IA simulada: nenhuma questão perdida (SC-003)
-- [ ] Orçamento global e por usuário decrementando via `ai_call`, com 429 tratado na UI
-- [ ] Reimportação sem duplicatas (SC-007)
+- [x] Os três métodos importam e salvam questões reais no Neon, com revisão obrigatória (T023, T027, T048)
+- [x] `Unidade II.pdf` e `III UNIDADE.pdf` processados de ponta a ponta com IA real e via agente externo (docs/10 §8; E2E com `E2E_AI=1`)
+- [x] Falha total de IA simulada: nenhuma questão perdida (SC-003) (`src/features/import/__tests__/importJob.test.ts`: estruturação indisponível → fallback determinístico)
+- [x] Orçamento global e por usuário decrementando via `ai_call`, com 429 tratado na UI (`reserveAiRequest`; T036)
+- [x] Reimportação sem duplicatas (SC-007) (T026)
 - [ ] Revisão operável por teclado e sem rolagem horizontal em 375 px (SC-008)
 - [ ] `npm run check` verde, incluindo T016–T019, T022, T026
 - [ ] Contratos em `contracts/` iguais ao comportamento implementado

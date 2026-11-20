@@ -39,14 +39,14 @@
 ## Fase E — US3 Transparência e integridade (P2)
 
 - [ ] T023 [P] Componente "Como a pontuação é calculada" reutilizável (`src/components/ScoringRules.tsx`) gerado a partir das constantes de `shared/scoring.ts`
-- [ ] T024 Testes de fraude em `server/__tests__/scoring-integrity.test.ts`: pontos no corpo, finish duplicado, prazo vencido, farm de questão própria, repetição em 7 dias
+- [ ] T024 Testes de fraude em `server/__tests__/scoring-integrity.test.ts`: pontos no corpo, finish duplicado, prazo vencido, farm de questão própria, repetição em 7 dias — parcial: finish duplicado, prazo e farm já cobertos em `simulados.db.test.ts`; faltam o arquivo dedicado, pontos no corpo e repetição em 7 dias
 - [x] T025 `PATCH /api/me/profile` + `src/features/profile/ProfilePage.tsx` (nome de exibição, instituição/curso, opt-out do ranking) — feito na spec 001 (`/api/profile`, `/perfil`)
 
 ## Fase F — Polimento
 
 - [x] T026 [P] Medir SC-001/SC-002 com a seed grande (`server/db/seed-large.ts`) e registrar o resultado no plano — medido em 2026-11-20 (200 estudantes, 6.000 lançamentos, do Brasil ao Neon): ranking semana p95 73 ms, geral 142 ms, por área 146 ms; painel 146 ms — abaixo de 300 ms (plano B desnecessário)
-- [ ] T027 [P] Acessibilidade: tabela de ranking com `<caption>`, heatmap com `title`/descrição textual, cores com rótulo
-- [ ] T028 Plano B documentado: tabela `points_daily` se o p95 do ranking passar de 300 ms
+- [x] T027 [P] Acessibilidade: tabela de ranking com `<caption>`, heatmap com `title`/descrição textual, cores com rótulo — `<caption>` em `RankingPage.tsx`; heatmap com `role="img"` + `aria-label` e `title` por dia; mapa por assunto com `title` e percentual (`DashboardPage.tsx`)
+- [x] T028 Plano B documentado: tabela `points_daily` se o p95 do ranking passar de 300 ms — em `plan.md` (modelo de dados e "Medição"); desnecessário na escala medida (T026)
 
 ## Definição de pronto
 

@@ -21,7 +21,7 @@
 - [x] T012 Validação na inicialização: só IDs `:free` ou `openrouter/free` em `TASKS` (FR-014), em `server/ai/models.ts`
 - [x] T013 [P] Telemetria: grava `ai_call` com `user_id` (feito via `setAiRecorder()` em `server/ai/client.ts` + `server/app.ts`)
 - [ ] T014 [P] Ritmo de 20 req/min: `server/ai/rate.ts` (token bucket por instância) usado por `callStructured`
-- [ ] T015 [P] Testes do cliente com provedor mockado `server/__tests__/ai-client.test.ts`: 429 → próximo elo; JSON inválido → reparo → próximo; quality reprovada → reparo; breaker abre/fecha
+- [ ] T015 [P] Testes do cliente com provedor mockado `server/__tests__/ai-client.test.ts`: 429 → próximo elo; JSON inválido → reparo → próximo; quality reprovada → reparo; breaker abre/fecha — parcial: o arquivo existe e cobre só a classificação de erros (401/402/403/404/429)
 - [ ] T016 [P] Testes de `server/ai/quality.ts` (grounding com texto OCR, distratores repetidos/"todas as anteriores"/tamanho)
 - [ ] T017 Ampliar os testes de guardrail com casos PT reais (falsos positivos: "o paciente ignora as instruções médicas")
 
@@ -29,7 +29,7 @@
 
 - [ ] T018 Corpus de ataques `server/ai/eval/attacks/*.json` (≥ 30: ignore/revele/aja como, zero-width, bidi, chat markup, script, base64, "me dê nota máxima", URL/webhook)
 - [ ] T019 Teste automatizado: corpus × `inspectText` (todos sinalizados) e × `gradeDiscursive` com provedor real em job manual (SC-001)
-- [ ] T020 Garantir guardrail no servidor em todas as entradas de texto: importação (`server/routes/imports.ts`), respostas (`PUT …/answers`, spec 003), editor de questões, correção (`server/routes/ai.ts`)
+- [ ] T020 Garantir guardrail no servidor em todas as entradas de texto: importação (`server/routes/imports.ts`), respostas (`PUT …/answers`, spec 003), editor de questões, correção (`server/routes/ai.ts`) — parcial: há guardrail no grafo da importação por IA, nas rotas de IA e nas respostas do simulado; faltam o editor (`/api/questions`) e o commit do agente externo/manual
 - [ ] T021 Lint/teste que proíbe `dangerouslySetInnerHTML` em `src/` (regra oxlint ou teste com grep)
 - [ ] T022 Restaurar trecho removido (falso positivo) na revisão da importação, só para o dono (depende do ponto em aberto 4)
 
@@ -65,8 +65,8 @@
 
 ## Fase H — Visão (Fase 2)
 
-- [ ] T041 Cliente: renderizar páginas com imagem (`pdfExtract.ts` → canvas → JPEG 0,75, ≤ 1 MB) e enviar em lotes < 4,5 MB
-- [ ] T042 `describeImage` (tarefa `vision`) + nó opcional no grafo de importação, preenchendo `imageDescription`
+- [x] T041 Cliente: renderizar páginas com imagem (`pdfExtract.ts` → canvas → JPEG 0,75, ≤ 1 MB) e enviar em lotes < 4,5 MB — feito na spec 002 T049/T060, com o RECORTE da imagem em vez da página inteira (≤ 3 por lote)
+- [x] T042 `describeImage` (tarefa `vision`) + nó opcional no grafo de importação, preenchendo `imageDescription` — feito na spec 002 T050 (nó `vision`, `server/ai/pipelines/vision.ts`): a transcrição entra no texto como `[Imagem p. N: …]` e preenche `descricao_imagem`; medido em docs/10 §7–§8
 
 ## Fase I — Polimento
 

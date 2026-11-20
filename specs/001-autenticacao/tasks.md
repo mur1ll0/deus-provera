@@ -57,7 +57,7 @@ Legenda: `[P]` = paralelizável (arquivos independentes) · `[x]` = concluída
 
 ## Fase 7 — Polimento
 
-- [ ] T034 [P] Acessibilidade da tela de login e perfil: foco visível, `aria-live` para erros, contraste AA
+- [ ] T034 [P] Acessibilidade da tela de login e perfil: foco visível, `aria-live` para erros, contraste AA — parcial (2026-11-20): erros com `role="alert"`/`aria-live` no login e no perfil; falta conferir foco visível e contraste AA
 - [ ] T035 [P] Revisão LGPD: texto do aviso de privacidade e link na tela de login
 - [x] T036 Remover `login`/`logout`/`loggedIn` do store do protótipo (`src/mocks/store.tsx`) — o modo protótipo (dev sem API) guarda a sessão fictícia só em memória no `AuthProvider`
 
