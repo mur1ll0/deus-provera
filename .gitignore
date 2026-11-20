@@ -1,0 +1,32 @@
+# Dependências e build
+node_modules
+dist
+dist-ssr
+.vercel
+*.tsbuildinfo
+
+# Ambiente / segredos
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Sondas/testes temporários de desenvolvimento
+scripts/_tmp_*
+
+# PDFs de exemplo do usuário (conteúdo de terceiros — não versionar)
+/*.pdf
+samples/private/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.sw?

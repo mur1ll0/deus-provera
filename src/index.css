@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   Design tokens — Deus Proverá
+   Paleta "vinho + dourado" (inspirada na plataforma de referência,
+   com o dourado como cor de "provisão"/conquista).
+------------------------------------------------------------------- */
+@theme {
+  --font-sans: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: #faf7f9;
+  --color-ink: #1e1530;
+  --color-muted: #6b6178;
+  --color-line: #ece5ea;
+
+  --color-brand-50: #fbf2f7;
+  --color-brand-100: #f6e3ee;
+  --color-brand-200: #eec7dd;
+  --color-brand-300: #e09ec3;
+  --color-brand-400: #cc6a9f;
+  --color-brand-500: #b14381;
+  --color-brand-600: #8a1f5e;
+  --color-brand-700: #741a4f;
+  --color-brand-800: #5e1641;
+  --color-brand-900: #4a1234;
+
+  --color-gold-50: #fef8e7;
+  --color-gold-100: #fdecc0;
+  --color-gold-300: #f7cd6a;
+  --color-gold-400: #f2b632;
+  --color-gold-600: #b7800a;
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(30 21 48 / 0.04), 0 8px 24px -12px rgb(30 21 48 / 0.12);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+::selection {
+  background: var(--color-brand-200);
+}
+
+@utility card {
+  background: white;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-brand-200) transparent;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-pop {
+  animation: pop-in 0.22s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop {
+    animation: none;
+  }
+}
