@@ -39,14 +39,14 @@ test('agente externo: JSON → revisão → salvar → banco de questões', asyn
 for (const pdf of ['Unidade II.pdf', 'III UNIDADE.pdf']) {
   test(`PDF com IA real: ${pdf}`, async ({ page }) => {
     test.skip(process.env.E2E_AI !== '1' || !existsSync(pdf), 'defina E2E_AI=1 (usa a cota do OpenRouter) e tenha o PDF na raiz')
-    test.setTimeout(40 * 60_000)
+    test.setTimeout(75 * 60_000)
     await page.goto('/importar')
     await page.getByRole('checkbox', { name: /Compartilhar as questões importadas/ }).uncheck()
     await page.locator('input[type=file]').first().setInputFiles(pdf)
     const vision = page.getByRole('checkbox', { name: /Transcrever as \d+ imagens/ })
     if (await vision.count()) await vision.check()
     await page.getByRole('button', { name: 'Processar com IA →' }).click()
-    await expect(page.getByRole('button', { name: /Confirmar e salvar \d+/ })).toBeVisible({ timeout: 38 * 60_000 })
+    await expect(page.getByRole('button', { name: /Confirmar e salvar \d+/ })).toBeVisible({ timeout: 70 * 60_000 })
     const total = Number((await page.getByRole('button', { name: /Confirmar e salvar \d+/ }).textContent())!.match(/\d+/)![0])
     // Questões sem resposta/classificação bloqueiam: tira as com problema (decisão T040) e salva o resto
     await page.getByRole('button', { name: /Confirmar e salvar/ }).click()

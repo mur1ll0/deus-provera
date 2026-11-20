@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test'
  * O login Google é substituído por uma sessão criada no banco (e2e/global-setup.ts) — tudo apagado no fim.
  *
  *   npm run test:e2e              → fluxos principais (sem IA)
- *   E2E_AI=1 npm run test:e2e     → + importação dos PDFs de exemplo com a IA real (marco S2; ~10 min e ~70 requisições por PDF)
+ *   E2E_AI=1 npm run test:e2e     → + importação dos PDFs de exemplo com a IA real (marco S2; ~25–60 min e ~80 requisições por PDF com visão — rode sem outras cargas de IA em paralelo)
  */
 export default defineConfig({
   testDir: 'e2e',

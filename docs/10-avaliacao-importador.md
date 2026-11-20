@@ -202,3 +202,43 @@ Na 1ª tentativa a IA **omitiu** o quadro `[Imagem p. 15: POP-Q …]` de uma que
 - Com visão, **quase todo o conteúdo que só existia em imagem passa a chegar ao importador**: 63 das 70 questões dependentes de imagem são detectadas (antes: 20) e os valores POP-Q chegam exatos na questão certa em 39/41 casos — sem custo em dinheiro e sem piorar o texto.
 - O ponto fraco não é a leitura (95% dos pontos POP-Q certos), e sim **disponibilidade** (um modelo só respondendo; 2 de 25 lotes estouraram o prazo) e **fotos com várias questões**. Para PDFs só de fotos, o **agente externo** continua mais confiável.
 - Antes de trocar a cadeia `vision` em `server/ai/models.ts`, rode `npm run eval:import -- --vision` (≈25 requisições para os 2 PDFs) e compare com a §7.1.
+
+## 8. Pipeline completo com IA + visão (créditos OpenRouter) — 2026-11-20
+
+Esta é a primeira rodada com **todos os lotes** dos dois PDFs (antes, até 12 lotes):
+
+```
+npm run eval:import -- --ai --vision --reuse --batches 999
+```
+
+As transcrições das imagens são reaproveitadas da rodada de visão. Ao todo foram ~145 chamadas de estruturação, mais ~23 de visão, com US$ 0 de custo.
+
+| Métrica (IA + visão) | Unidade II (110 questões; 47 dependem de imagem) | III UNIDADE (106; 23 dependem de imagem) |
+|---|---|---|
+| Recall (texto) | **95,2%** (sem IA: 92,1%) | **91,6%** (sem IA: 90,4%) |
+| Precisão | 95,5% (sem IA: 96,2%) | 93,3% (sem IA: 95,1%) |
+| Nº de perguntas certo | 93,3% (sem IA: 96,6%) | **97,4%** (sem IA: 90,7%) |
+| Enunciado | 95,7% | 98,8% |
+| Pergunta | **95,5%** (sem IA: 87,8%) | **95,7%** (sem IA: 91,3%) |
+| Resposta | **97,5%** (sem IA: 89,9%) | 92,3% (sem IA: 95,0%) |
+| Questões de imagem detectadas | **97,9%** (sem visão: 36,2%) | **91,3%** (sem visão: 13,0%) |
+| Conteúdo da imagem recuperado | 83,0% | **21,7%** (visão sem IA: 52,2%) |
+| POP-Q 100% certo na questão certa | **95,1%** (39/41) | — |
+| Chamadas (ok) / questões no fallback | 59 (51) / 2 | 84 (70) / 5 |
+
+**Leitura:**
+- A IA ganha onde o segmentador erra: o texto das perguntas, as respostas da U2 e a contagem de subitens da U3.
+- A visão faz as questões de imagem aparecerem.
+- Nada se perde: o que a IA não estrutura volta pelo fallback, sinalizado para revisão.
+
+**Achado — conteúdo das imagens de TEXTO na III UNIDADE (21,7% com IA contra 52,2% sem IA):**
+- 15 das 18 imagens da U3 são fotos/prints de texto. Elas entram no formato longo (`[Imagem p. N — texto da imagem:] … [Imagem p. N — fim]`).
+- A salvaguarda `missingImageBrackets` só reanexa o formato curto (`[Imagem p. N: …]`).
+- **Tentativa:** reanexar também o formato longo quando menos de 60% das palavras aparecem na saída. Resultado da nova rodada completa:
+  - U3 melhorou pouco (conteúdo 26,1%, recall 94,0%);
+  - a U2 piorou: POP-Q 78,0%, imagens detectadas 91,5%, precisão 91,2%.
+
+  Parte da piora pode ser variância, porque nessa rodada o `ling-3.2-flash` respondeu 429 e os fallbacks mudaram. Mesmo assim, a mudança foi **revertida** pela regra "não piorar".
+- **Hipótese em aberto:** a métrica de conteúdo da U3 olha `descricao_imagem`, e não o enunciado. A IA incorpora o texto da foto ao enunciado, o que é correto, mas some da descrição. Investigar antes de mexer no grafo.
+
+**Variância observada:** entre duas rodadas completas iguais, menos a salvaguarda, as métricas de texto variaram ±2–4 pontos e as de imagem até 17 pontos na U2. Para decidir mudanças no pipeline, compare pelo menos 2 rodadas.
