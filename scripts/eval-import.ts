@@ -118,7 +118,7 @@ function predictDeterministic(full: string): PredQuestion[] {
 }
 
 async function predictWithAi(pages: { page: number; text: string }[], images: Record<string, PageImageState>): Promise<PredQuestion[]> {
-  const { importGraph } = await import('../server/ai/pipelines/import-graph')
+  const { importGraph, STRUCTURE_PARALLEL } = await import('../server/ai/pipelines/import-graph')
   const { END } = await import('../server/ai/graph')
   let state = importGraph.initial({
     nonce: Math.random().toString(36).slice(2, 10),
@@ -143,21 +143,25 @@ async function predictWithAi(pages: { page: number; text: string }[], images: Re
   while (state.cursor !== END) {
     if (state.cursor === 'structure') {
       if (batches >= BATCHES) break
-      batches++
-      console.log(`   lote ${batches} (${state.pendingBatches[0]?.length ?? 0} blocos)…`)
+      // Cada passo roda até STRUCTURE_PARALLEL lotes: corta a fila no limite de --batches (o resto fica fora do escopo)
+      const left = BATCHES - batches
+      if (state.pendingBatches.length > left) state = { ...state, pendingBatches: state.pendingBatches.slice(0, left) }
+      const n = Math.min(STRUCTURE_PARALLEL, state.pendingBatches.length)
+      console.log(`   lotes ${batches + 1}–${batches + n} em paralelo (${state.pendingBatches.slice(0, n).map((b) => b.length).join('+')} blocos)…`)
+      batches += n
     }
     const before = state.aiLog.length
     const t0 = Date.now()
     ctx.deadline = t0 + 240_000 // mesmo prazo por passo da produção (POST /imports/:id/run)
     state = await importGraph.step(state, ctx)
     if (state.history.at(-1)?.node === 'structure') {
-      // Diagnóstico: cada tentativa do lote (modelo, resultado, motivo da falha)
+      // Diagnóstico: cada tentativa dos lotes do passo (modelo, resultado, motivo da falha)
       for (const a of state.aiLog.slice(before)) {
         console.log(`      ${a.ok ? '✓' : '✗'} ${a.model} ${a.ok ? '' : `[${a.errorKind}${a.status ? ` HTTP ${a.status}` : ''}]`} ${a.latencyMs} ms${a.error ? ` — ${a.error.slice(0, 140)}` : ''}`)
         aiAttempts.push({ batch: batches, ...a })
       }
-      const fellBack = !state.aiLog.slice(before).some((a) => a.ok)
-      console.log(`      → ${fellBack ? 'FALLBACK determinístico' : 'estruturado pela IA'} em ${((Date.now() - t0) / 1000).toFixed(0)} s`)
+      const okCalls = state.aiLog.slice(before).filter((a) => a.ok).length
+      console.log(`      → ${okCalls} lote(s) estruturado(s) pela IA (o resto pelo fallback) em ${((Date.now() - t0) / 1000).toFixed(0)} s`)
     }
     if (state.cursor === 'classify') break // avaliação de estrutura: classificação fica de fora
   }
@@ -489,7 +493,7 @@ for (const d of DOCS) {
   for (const [k, v] of Object.entries(ev.row)) report.push(`| ${k} | ${typeof v === 'number' && v <= 1 && !Number.isInteger(v) ? f1(v) : v} |`)
   if (USE_AI) {
     report.push('', '### Tentativas de IA (lote · modelo · resultado)', '')
-    for (const a of aiAttempts) report.push(`- lote ${a.batch} · ${a.model} · ${a.ok ? 'ok' : `${a.errorKind}${a.status ? ` HTTP ${a.status}` : ''}`} · ${a.latencyMs} ms${a.error ? ` — ${String(a.error).slice(0, 160)}` : ''}`)
+    for (const a of aiAttempts) report.push(`- até o lote ${a.batch} · ${a.model} · ${a.ok ? 'ok' : `${a.errorKind}${a.status ? ` HTTP ${a.status}` : ''}`} · ${a.latencyMs} ms${a.error ? ` — ${String(a.error).slice(0, 160)}` : ''}`)
   }
   if (visionAttempts.length) {
     report.push('', '### Tentativas de visão (lote · modelo · resultado)', '')

@@ -21,7 +21,7 @@ Fonte: API pública de modelos do OpenRouter (`/api/v1/models`, filtro preço 0)
 
 | Tarefa | Cadeia (ordem de preferência) | Por quê |
 |---|---|---|
-| `structure` (texto → JSON de questões) | `baidu/ernie-5.5-flash-preview:free` → `inclusionai/ling-3.2-flash:free` → `nvidia/nemotron-3.5-super-vl:free` → `openrouter/free` | Suportam `json_schema` estrito, contexto ≥ 1 M tokens |
+| `structure` (texto → JSON de questões, lotes de ≤ 3 questões, 3 lotes em paralelo) | `baidu/ernie-5.5-flash-preview:free` → `nvidia/nemotron-3.5-super-vl:free` → `inclusionai/ling-3.2-flash:free` → `openrouter/free` | Suportam `json_schema` estrito, contexto ≥ 1 M tokens |
 | `classify` (Área › Disciplina › Assunto + resumo, lotes de 20 questões) | `baidu/ernie-5.5-flash-preview:free` → `inclusionai/ling-3.2-flash:free` → `openrouter/free` | Rápido, saída estruturada. Lotes de 20 desde 2026-11-20: numa chamada só, 85 questões voltavam com 3 classificadas |
 | `distractors` (alternativas incorretas) | `baidu/ernie-5.5-flash-preview:free` → `nvidia/nemotron-3.5-super-vl:free` → `openrouter/free` | Raciocínio + JSON; temperatura 0,7 |
 | `explain` (dica / por que certa-errada) | `nvidia/nemotron-3-ultra-550b-a55b:free` → `baidu/ernie-5.5-flash-preview:free` → `openrouter/free` | Melhor raciocínio livre (sem `response_format`: pedimos JSON simples e validamos) |
@@ -58,7 +58,8 @@ A lista gratuita muda. `server/ai/eval/` terá ~30 casos reais (PT-BR, medicina 
 - `AI_DAILY_BUDGET=900` (reserva ~10% para margem) e `AI_USER_DAILY_LIMIT=200` por usuário (um PDF de ~140 questões usa ~60–70 requisições com visão).
 - Explicações são **cacheadas por questão** (`ai_cache`) e servem a todos os usuários: uma questão pública muito usada custa 1 chamada, não N.
 - Quando o orçamento acaba: aviso claro + caminhos sem IA (agente externo, autocorreção por checklist, edição manual).
-- Fila respeitando 20 req/min: o grafo processa um lote por vez; o breaker abre 60 s em `429`.
+- Fila respeitando 20 req/min: a estruturação roda até **3 lotes em paralelo** por passo (`STRUCTURE_PARALLEL` em `import-graph.ts`); os outros nós, um lote por vez. O breaker abre 60 s em `429`.
+- **Tempo da estruturação** (`ai_call` de produção, 2026-11-20): mediana de **15,5 s por lote** (6–93 s), ~13% de lotes reprovados (qualidade/JSON) e refeitos no próximo modelo. Quase todo o tempo é espera do modelo gratuito. Por isso os lotes rodam 3 de cada vez: mesmo número de requisições, cerca de 1/3 do tempo (21 lotes: de ~7–15 min para ~3–5 min).
 
 ## 4. Fallback em 3 camadas
 
@@ -96,7 +97,7 @@ flowchart LR
   vision[vision<br/>recortes de imagem → transcrição<br/>lotes de 3; falha → 2ª tentativa sozinha] -->|há imagens pendentes| vision
   vision -->|acabou| segment
   segment["segment<br/>[[imagem]] → [Imagem p. N: …]<br/>regex, lotes de 3"] --> structure
-  structure[structure<br/>LLM + grounding<br/>fallback: bloco cru] -->|há lotes| structure
+  structure[structure<br/>LLM + grounding, 3 lotes em paralelo<br/>fallback: bloco cru] -->|há lotes| structure
   structure -->|acabou| classify
   classify -->|lote de 20| classify
   classify[classify<br/>Área › Disciplina › Assunto<br/>+ descrição dos cards] -->|distratores desligados| validate

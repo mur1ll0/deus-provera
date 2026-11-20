@@ -141,6 +141,12 @@ export interface ImportCtx {
 // Lotes pequenos: modelos gratuitos de raciocínio obrigatório gastam ~4,8 mil tokens pensando por questão (models.ts).
 const MAX_BATCH_CHARS = 6_000
 const MAX_BATCH_ITEMS = 3
+/**
+ * Lotes de estruturação em paralelo por passo do grafo. Cada lote leva ~15 s (mediana, até ~90 s) nos modelos
+ * gratuitos e quase todo o tempo é espera do modelo: 3 simultâneos cortam o tempo da importação para ~1/3 com
+ * o MESMO número de requisições (ai_call de produção, 2026-11-20). 3 por usuário fica longe de 20 req/min.
+ */
+export const STRUCTURE_PARALLEL = 3
 const RISK_ORDER: RiskLevel[] = ['baixo', 'medio', 'alto']
 
 function chunkBy<T>(items: T[], size: (t: T) => number, maxSize: number, maxItems: number): T[][] {
@@ -281,6 +287,71 @@ export function nextClassifyQueue(rest: string[][], cards: Card[], retried = fal
   return { pendingClassify: chunkBy(left, () => 1, CLASSIFY_BATCH / 2, CLASSIFY_BATCH / 2), classifyRetried: true }
 }
 
+/**
+ * Estrutura UM lote (requisição já reservada). IA indisponível → fallback determinístico do lote, sem perder
+ * questão. As tentativas entram em `aiLog` via onAttempt (compartilhado entre lotes em paralelo).
+ */
+async function structureBatch(
+  batchIds: string[],
+  byId: Record<string, Block>,
+  nonce: string,
+  ctx: ImportCtx,
+  aiLog: AttemptLog[],
+): Promise<{ drafts: Record<string, DraftItem>; warnings: string[] }> {
+  const sourceById = Object.fromEntries(batchIds.map((id) => [id, byId[id].text]))
+  const drafts: Record<string, DraftItem> = {}
+  try {
+    const prompt = wrapUntrusted(batchIds.map((id) => `### bloco_id: ${id} (pág. ${byId[id].seg.page ?? '?'})\n${byId[id].text}`).join('\n\n'), nonce)
+    const r = await callStructured({
+      task: 'structure',
+      userId: ctx.userId,
+      deadline: ctx.deadline,
+      schema: structuredBatchSchema,
+      system: STRUCTURE_SYSTEM(nonce),
+      prompt,
+      quality: (v) => checkGrounding(v, sourceById),
+      onAttempt: (l) => aiLog.push(l),
+    })
+    const seen = new Set<string>()
+    // texto devolvido por bloco (um bloco pode virar mais de uma questão)
+    const outByBlock: Record<string, string> = {}
+    for (const q of r.value.questoes) outByBlock[q.bloco_id] = `${outByBlock[q.bloco_id] ?? ''}\n${q.enunciado}\n${q.perguntas.map((p) => `${p.texto}\n${p.resposta_esperada ?? ''}`).join('\n')}`
+    for (const q of r.value.questoes) {
+      const b = byId[q.bloco_id]
+      // só blocos DESTE lote (um id de outro lote sobrescreveria o resultado dele)
+      if (!b || !(q.bloco_id in sourceById)) continue
+      const id = seen.has(q.bloco_id) ? `${q.bloco_id}-${seen.size + 1}` : q.bloco_id
+      const first = !seen.has(q.bloco_id)
+      seen.add(q.bloco_id)
+      const img = imageFields(b.text)
+      // A IA às vezes omite o quadro/figura transcrito (ex.: POP-Q na página seguinte): reanexa ao enunciado
+      const lost = first ? missingImageBrackets(b.text, outByBlock[q.bloco_id]) : []
+      drafts[id] = {
+        id,
+        blockId: q.bloco_id,
+        area: 'Sem área',
+        disciplina: 'Sem disciplina',
+        rotulo: q.rotulo ?? b.seg.sourceLabel ?? null,
+        enunciado: lost.length ? `${q.enunciado}\n${lost.join('\n')}`.slice(0, 12000) : q.enunciado,
+        perguntas: q.perguntas.map((p) => ({ ...p, rotulo: cleanItemLabel(p.rotulo) })),
+        dificuldade: q.dificuldade,
+        tem_imagem: q.tem_imagem || !!img.tem_imagem,
+        descricao_imagem: img.descricao_imagem,
+        pagina: b.seg.page,
+        flags: b.risk !== 'baixo' ? ['Guardrail: conteúdo suspeito removido'] : [],
+      }
+    }
+    // Blocos que o modelo omitiu (sem "descartados") voltam pelo fallback para não perder conteúdo.
+    const discarded = new Set(r.value.descartados.map((d) => d.bloco_id))
+    for (const id of batchIds) if (!seen.has(id) && !discarded.has(id)) drafts[id] = draftFromSegment(byId[id], ['IA não devolveu esta questão — revise'])
+    return { drafts, warnings: r.value.alertas }
+  } catch (err) {
+    if (!(err instanceof AiUnavailableError)) throw err
+    for (const id of batchIds) drafts[id] = draftFromSegment(byId[id], ['Processado sem IA — revise'])
+    return { drafts, warnings: ['IA indisponível para um lote; itens marcados para revisão.'] }
+  }
+}
+
 export const importGraph = new StateGraph<ImportState, ImportCtx>()
   /* 1. Guardrail determinístico em todo o texto + classificador LLM nos trechos de risco alto */
   .addNode('guard', async (s, ctx) => {
@@ -347,64 +418,26 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
   })
   .addEdge('segment', 'structure')
 
-  /* 4. Estruturação por lote com IA (grounding obrigatório) + fallback determinístico */
+  /* 4. Estruturação com IA (grounding obrigatório) + fallback determinístico — até STRUCTURE_PARALLEL lotes por passo */
   .addNode('structure', async (s, ctx) => {
-    const [batchIds, ...rest] = s.pendingBatches
-    const byId = Object.fromEntries(s.blocks.map((b) => [b.id, b]))
-    const sourceById = Object.fromEntries(batchIds.map((id) => [id, byId[id].text]))
-    const drafts = { ...s.drafts }
-    const aiLog = [...s.aiLog]
-    try {
-      await ctx.reserveAiRequest()
-      const prompt = wrapUntrusted(batchIds.map((id) => `### bloco_id: ${id} (pág. ${byId[id].seg.page ?? '?'})\n${byId[id].text}`).join('\n\n'), s.nonce)
-      const r = await callStructured({
-        task: 'structure',
-        userId: ctx.userId,
-        deadline: ctx.deadline,
-        schema: structuredBatchSchema,
-        system: STRUCTURE_SYSTEM(s.nonce),
-        prompt,
-        quality: (v) => checkGrounding(v, sourceById),
-        onAttempt: (l) => aiLog.push(l),
-      })
-      const seen = new Set<string>()
-      // texto devolvido por bloco (um bloco pode virar mais de uma questão)
-      const outByBlock: Record<string, string> = {}
-      for (const q of r.value.questoes) outByBlock[q.bloco_id] = `${outByBlock[q.bloco_id] ?? ''}\n${q.enunciado}\n${q.perguntas.map((p) => `${p.texto}\n${p.resposta_esperada ?? ''}`).join('\n')}`
-      for (const q of r.value.questoes) {
-        const b = byId[q.bloco_id]
-        if (!b) continue
-        const id = seen.has(q.bloco_id) ? `${q.bloco_id}-${seen.size + 1}` : q.bloco_id
-        const first = !seen.has(q.bloco_id)
-        seen.add(q.bloco_id)
-        const img = imageFields(b.text)
-        // A IA às vezes omite o quadro/figura transcrito (ex.: POP-Q na página seguinte): reanexa ao enunciado
-        const lost = first ? missingImageBrackets(b.text, outByBlock[q.bloco_id]) : []
-        drafts[id] = {
-          id,
-          blockId: q.bloco_id,
-          area: 'Sem área',
-          disciplina: 'Sem disciplina',
-          rotulo: q.rotulo ?? b.seg.sourceLabel ?? null,
-          enunciado: lost.length ? `${q.enunciado}\n${lost.join('\n')}`.slice(0, 12000) : q.enunciado,
-          perguntas: q.perguntas.map((p) => ({ ...p, rotulo: cleanItemLabel(p.rotulo) })),
-          dificuldade: q.dificuldade,
-          tem_imagem: q.tem_imagem || !!img.tem_imagem,
-          descricao_imagem: img.descricao_imagem,
-          pagina: b.seg.page,
-          flags: b.risk !== 'baixo' ? ['Guardrail: conteúdo suspeito removido'] : [],
-        }
+    const batches: string[][] = []
+    for (const batch of s.pendingBatches.slice(0, STRUCTURE_PARALLEL)) {
+      // Cota esgotada no 1º lote interrompe o passo (429 → checkpoint); nos seguintes, só processa os já reservados.
+      try {
+        await ctx.reserveAiRequest()
+      } catch (err) {
+        if (!batches.length) throw err
+        break
       }
-      // Blocos que o modelo omitiu (sem "descartados") voltam pelo fallback para não perder conteúdo.
-      const discarded = new Set(r.value.descartados.map((d) => d.bloco_id))
-      for (const id of batchIds) if (!seen.has(id) && !discarded.has(id)) drafts[id] = draftFromSegment(byId[id], ['IA não devolveu esta questão — revise'])
-      return { drafts, aiLog, pendingBatches: rest, warnings: [...s.warnings, ...r.value.alertas] }
-    } catch (err) {
-      if (!(err instanceof AiUnavailableError)) throw err
-      for (const id of batchIds) drafts[id] = draftFromSegment(byId[id], ['Processado sem IA — revise'])
-      // (as tentativas já entraram em aiLog via onAttempt — não somar err.attempts de novo)
-      return { drafts, aiLog, pendingBatches: rest, warnings: [...s.warnings, 'IA indisponível para um lote; itens marcados para revisão.'] }
+      batches.push(batch)
     }
+    const byId = Object.fromEntries(s.blocks.map((b) => [b.id, b]))
+    const aiLog = [...s.aiLog]
+    const results = await Promise.all(batches.map((ids) => structureBatch(ids, byId, s.nonce, ctx, aiLog)))
+    // Mescla na ordem dos lotes: a ordem das chaves de `drafts` é a ordem do documento (classificação e revisão).
+    const drafts = { ...s.drafts }
+    for (const r of results) Object.assign(drafts, r.drafts)
+    return { drafts, aiLog, pendingBatches: s.pendingBatches.slice(batches.length), warnings: [...s.warnings, ...results.flatMap((r) => r.warnings)] }
   })
   .addConditionalEdges('structure', (s) => (s.pendingBatches.length ? 'structure' : 'classify'))
 

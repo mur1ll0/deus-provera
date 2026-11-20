@@ -107,6 +107,8 @@ npm run eval:import -- --ai --batches 12 --pdf u3     # amostra; --reuse recalcu
 | **Com IA** | **100%** | **95,0%** | **100%** | **97,6%** | **94,9%** |
 | Sem IA (segmentador) | 100% | 90,5% | 84,2% | 87,8% | 87,2% |
 
+**Com 3 lotes em paralelo** (2026-11-20, mesmo trecho, `--ai --batches 12 --pdf u3`): mesmas métricas (recall 100%, precisão 95,0%, nº de perguntas 100%, pergunta 97,6%, resposta 94,9%), 13 chamadas (12 ok; 1 JSON inválido refeito com sucesso), 0 fallbacks e **116 s no total** para os 12 lotes (4 passos de 15–60 s). Em série, a mediana de ~17 s por lote dava ~3,5 min.
+
 A IA melhora principalmente a **separação enunciado × perguntas** (+16 pontos no nº de perguntas certo) e o **texto das perguntas** (+10). Na Unidade II, os primeiros lotes caem nos quadros POP-Q (só imagem) — ali nem a IA de texto nem o segmentador acertam; é trabalho da etapa de **visão** (medida na §7).
 
 > Limitações: amostra de 21 questões de um PDF; o modelo gratuito pode mudar/cair (o fallback cobre). Repita `npm run eval:import -- --ai` periodicamente e antes de trocar modelos em `server/ai/models.ts`.

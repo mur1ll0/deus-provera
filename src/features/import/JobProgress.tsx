@@ -29,7 +29,7 @@ const VISION_STEPS: Step[] = [
 const SERVER_STEPS: Step[] = [
   { id: 'guard', label: 'Guardrail de segurança', detail: () => 'Remove tentativas de injeção do texto' },
   { id: 'segment', label: 'Segmentação', detail: (p) => (p.blocks ? `${p.blocks} questões encontradas` : 'Separa enunciados e perguntas') },
-  { id: 'structure', label: 'Estruturação com IA', detail: (p) => (p.pendingBatches ? `Faltam ${p.pendingBatches} lote(s) de até 3 questões` : 'Enunciado, perguntas, respostas e pontos-chave') },
+  { id: 'structure', label: 'Estruturação com IA', detail: (p) => (p.pendingBatches ? `Faltam ${p.pendingBatches} lote(s) de até 3 questões (3 lotes por vez)` : 'Enunciado, perguntas, respostas e pontos-chave') },
   { id: 'classify', label: 'Categorização', detail: () => 'Área › Disciplina › Assunto' },
   { id: 'validate', label: 'Validação final', detail: () => 'Contrato e sinalizações para a revisão' },
 ]
