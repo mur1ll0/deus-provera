@@ -188,7 +188,13 @@ export function ImportPage() {
           onChange={(next) => {
             setReview(next)
             // Problemas de questões removidas/editadas somem; os demais são reavaliados ao salvar.
-            setProblems((ps) => ps.filter((p) => !p.draftId || (next.drafts[p.draftId] && next.drafts[p.draftId] === review.drafts[p.draftId])))
+            setProblems((ps) =>
+              ps.filter((p) =>
+                p.draftId
+                  ? next.drafts[p.draftId] && next.drafts[p.draftId] === review.drafts[p.draftId]
+                  : !p.cardId || next.cards.find((c) => c.id === p.cardId) === review.cards.find((c) => c.id === p.cardId),
+              ),
+            )
           }}
           onBack={() => setStep('entrada')}
           saving={commit.isPending}
