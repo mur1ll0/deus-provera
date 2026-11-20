@@ -52,6 +52,7 @@ Node 24 · Vite 8 · React 19.3 · React Router 8 · Tailwind 4.3 · TypeScript 
 
 - **OpenRouter:** base `https://openrouter.ai/api/v1` (`OPENROUTER_BASE_URL`), chave em `OPENROUTER_API_KEY` no `.env`/`.env.local` (ignorados pelo Git — nunca imprimir nem commitar). Scripts carregam o env via `scripts/load-env.ts`. Erros 401/403/402 interrompem a cadeia (`AiConfigError`); 404/429/timeout passam para o próximo modelo.
 - **IA:** só modelos `:free` em `server/ai/models.ts` (um pago na cadeia = bug). Toda chamada via `callStructured()` (orçamento, breaker, fallback, telemetria). Conteúdo do usuário SEMPRE via `wrapUntrusted()` + guardrail. Modelos sem ferramentas.
+- **Função da API na Vercel:** `api/index.ts` importa `api/_server.mjs`, o `server/app.ts` empacotado por `npm run build:api` (esbuild, roda dentro do `npm run build`; arquivo gerado, fora do Git). Sem o bundle, o Node ESM da Vercel não resolve imports relativos sem extensão (`ERR_MODULE_NOT_FOUND`).
 - **Limites Vercel Hobby:** corpo ≤ 4,5 MB (PDF nunca vai ao servidor — só texto); função ≤ 300 s (pipeline com checkpoint em `import_job.state`, `/run` em loop).
 - **Pontuação/gabarito/prazo:** decididos no servidor com `shared/scoring.ts`. Na prova em andamento a API nunca envia `correct`/`expectedAnswer`.
 - **Saída de IA** é texto puro no React (nunca `dangerouslySetInnerHTML`).

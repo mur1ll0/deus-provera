@@ -30,3 +30,6 @@ samples/private/
 .DS_Store
 *.suo
 *.sw?
+
+# bundle da API gerado no build (npm run build:api)
+api/_server.mjs
