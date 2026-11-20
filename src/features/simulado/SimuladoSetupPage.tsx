@@ -1,6 +1,6 @@
 import clsx from 'clsx'
-import { BrainCircuit, Eye, EyeOff, GraduationCap, History, Lock, Play, Repeat, Shuffle, Users, User } from 'lucide-react'
-import { useState } from 'react'
+import { BrainCircuit, Eye, EyeOff, GraduationCap, History, Lock, Play, Repeat, Search, Shuffle, Users, User, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import type { SimuladoConfig } from '@shared/domain'
 import { BASE_POINTS, MODE_MULTIPLIER, PROVA_RULES } from '@shared/scoring'
@@ -34,8 +34,25 @@ export function SimuladoSetupPage() {
 
   const isProva = cfg.mode === 'prova'
   const src = useSetupSource(cfg, real)
-  const disciplines = src.disciplines.filter((d) => !cfg.areaId || d.areaId === cfg.areaId)
+  const areaOptions = useMemo(() => sortByName(src.areas.map((a) => ({ key: a.id, name: a.name, ids: [a.id] }))), [src.areas])
+  const selectedArea = areaOptions.find((a) => a.key === cfg.areaId)
+  // A mesma disciplina pode existir em várias áreas (uma linha por área no banco): com a área
+  // selecionada só entram as dela; em "Todas", disciplinas de mesmo nome viram um chip só, que
+  // seleciona os ids de todas as áreas.
+  const disciplineOptions = useMemo(() => {
+    const byName = new Map<string, Option>()
+    for (const d of src.disciplines) {
+      if (cfg.areaId && d.areaId !== cfg.areaId) continue
+      const k = foldText(d.name)
+      const cur = byName.get(k)
+      if (cur) cur.ids.push(d.id)
+      else byName.set(k, { key: k, name: d.name, ids: [d.id] })
+    }
+    return sortByName([...byName.values()])
+  }, [src.disciplines, cfg.areaId])
+  const selectedDisciplines = disciplineOptions.filter((o) => o.ids.every((id) => cfg.disciplineIds.includes(id))).length
   const topics = src.topics
+  const topicOptions = useMemo(() => topics.map((t) => ({ key: t, name: t, ids: [t] })), [topics])
   const available = src.available
   const count = Math.min(cfg.count, available)
   const estMin = autoTimeLimitMin(src.kinds(count))
@@ -96,42 +113,52 @@ export function SimuladoSetupPage() {
             </div>
           </Section>
 
-          <Section title="Área">
-            <div className="flex flex-wrap gap-2">
-              {src.areas.map((a) => (
-                <Chip key={a.id} active={cfg.areaId === a.id} onClick={() => setCfg((c) => ({ ...c, areaId: a.id, disciplineIds: [], topics: [] }))}>
-                  {a.name}
+          <Section title="Área" hint={selectedArea ? selectedArea.name : 'Todas as áreas'}>
+            <ChipPicker
+              label="área"
+              options={areaOptions}
+              isActive={(o) => cfg.areaId === o.key}
+              onToggle={(o) => setCfg((c) => ({ ...c, areaId: c.areaId === o.key ? null : o.key, disciplineIds: [], topics: [] }))}
+              leading={
+                <Chip active={cfg.areaId === null} onClick={() => setCfg((c) => ({ ...c, areaId: null, disciplineIds: [], topics: [] }))}>
+                  <Shuffle size={14} /> Todas
                 </Chip>
-              ))}
-              <Chip active={cfg.areaId === null} onClick={() => setCfg((c) => ({ ...c, areaId: null, disciplineIds: [], topics: [] }))}>
-                <Shuffle size={14} /> Todas
-              </Chip>
-            </div>
+              }
+            />
           </Section>
 
-          <Section title="Disciplinas" hint="Nenhuma selecionada = todas">
-            <div className="flex flex-wrap gap-2">
-              {disciplines.map((d) => (
-                <Chip
-                  key={d.id}
-                  active={cfg.disciplineIds.includes(d.id)}
-                  onClick={() => setCfg((c) => ({ ...c, topics: [], disciplineIds: c.disciplineIds.includes(d.id) ? c.disciplineIds.filter((x) => x !== d.id) : [...c.disciplineIds, d.id] }))}
-                >
-                  {d.name}
-                </Chip>
-              ))}
-            </div>
+          <Section
+            title="Disciplinas"
+            hint={selectedDisciplines ? `${selectedDisciplines} selecionada${selectedDisciplines > 1 ? 's' : ''}` : 'Nenhuma selecionada = todas'}
+            action={selectedDisciplines > 0 && <ClearButton onClick={() => setCfg((c) => ({ ...c, disciplineIds: [], topics: [] }))} />}
+          >
+            <ChipPicker
+              label="disciplina"
+              options={disciplineOptions}
+              isActive={(o) => o.ids.every((id) => cfg.disciplineIds.includes(id))}
+              onToggle={(o) =>
+                setCfg((c) => {
+                  const on = o.ids.every((id) => c.disciplineIds.includes(id))
+                  const rest = c.disciplineIds.filter((id) => !o.ids.includes(id))
+                  return { ...c, topics: [], disciplineIds: on ? rest : [...rest, ...o.ids] }
+                })
+              }
+              empty={cfg.areaId ? 'Nenhuma disciplina nesta área.' : 'Nenhuma disciplina cadastrada.'}
+            />
           </Section>
 
           {!isProva && topics.length > 0 && (
-            <Section title="Assuntos específicos" hint="Opcional — treino focado">
-              <div className="flex flex-wrap gap-2">
-                {topics.map((t) => (
-                  <Chip key={t} active={cfg.topics.includes(t)} onClick={() => set('topics', cfg.topics.includes(t) ? cfg.topics.filter((x) => x !== t) : [...cfg.topics, t])}>
-                    {t}
-                  </Chip>
-                ))}
-              </div>
+            <Section
+              title="Assuntos específicos"
+              hint={cfg.topics.length ? `${cfg.topics.length} selecionado${cfg.topics.length > 1 ? 's' : ''}` : 'Opcional — treino focado'}
+              action={cfg.topics.length > 0 && <ClearButton onClick={() => set('topics', [])} />}
+            >
+              <ChipPicker
+                label="assunto"
+                options={topicOptions}
+                isActive={(o) => cfg.topics.includes(o.key)}
+                onToggle={(o) => set('topics', cfg.topics.includes(o.key) ? cfg.topics.filter((x) => x !== o.key) : [...cfg.topics, o.key])}
+              />
             </Section>
           )}
 
@@ -289,15 +316,94 @@ function ModeCard({ active, onClick, icon: Icon, title, mult, items }: { active:
   )
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Section({ title, hint, action, children }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Card className="p-5">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-bold">{title}</h3>
-        {hint && <span className="text-xs text-muted">{hint}</span>}
+        <span className="flex items-baseline gap-3">
+          {hint && <span className="text-xs text-muted">{hint}</span>}
+          {action}
+        </span>
       </div>
       {children}
     </Card>
+  )
+}
+
+/** Opção de um ChipPicker; `ids` agrupa linhas de mesmo nome (ex.: a mesma disciplina em duas áreas). */
+interface Option {
+  key: string
+  name: string
+  ids: string[]
+}
+
+/** Minúsculas e sem acentos: busca e agrupamento ("Cálculo" = "calculo"). */
+const foldText = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim()
+const sortByName = (list: Option[]) => [...list].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+
+/** A partir de quantas opções o picker mostra a busca. */
+const SEARCH_FROM = 8
+
+/** Chips com busca e área rolável: listas longas (dezenas de disciplinas) não ocupam a tela. */
+function ChipPicker({
+  label,
+  options,
+  isActive,
+  onToggle,
+  leading,
+  empty = 'Nada por aqui.',
+}: {
+  label: string
+  options: Option[]
+  isActive: (o: Option) => boolean
+  onToggle: (o: Option) => void
+  leading?: React.ReactNode
+  empty?: string
+}) {
+  const [query, setQuery] = useState('')
+  const q = foldText(query)
+  const visible = q ? options.filter((o) => foldText(o.name).includes(q)) : options
+  return (
+    <div>
+      {options.length >= SEARCH_FROM && (
+        <label className="relative mb-3 block">
+          <span className="sr-only">Buscar {label}</span>
+          <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Buscar ${label}…`}
+            className="w-full rounded-xl border border-line bg-white py-2 pr-9 pl-9 text-sm outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
+          />
+          {query && (
+            <button type="button" onClick={() => setQuery('')} aria-label="Limpar busca" className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink">
+              <X size={14} />
+            </button>
+          )}
+        </label>
+      )}
+      <div className="scrollbar-thin -mx-1 max-h-44 overflow-y-auto px-1 py-0.5">
+        <div className="flex flex-wrap gap-2">
+          {leading}
+          {visible.map((o) => (
+            <Chip key={o.key} active={isActive(o)} onClick={() => onToggle(o)}>
+              {o.name}
+            </Chip>
+          ))}
+        </div>
+        {!visible.length && <p className="py-2 text-sm text-muted">{q ? `Nada encontrado para "${query.trim()}".` : empty}</p>}
+      </div>
+    </div>
+  )
+}
+
+function ClearButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="text-xs font-bold text-brand-600 hover:underline">
+      Limpar
+    </button>
   )
 }
 

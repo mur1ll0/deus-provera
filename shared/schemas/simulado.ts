@@ -11,7 +11,8 @@ export const simuladoConfigInput = z.object({
   mode: z.enum(['prova', 'treino']),
   scope: z.enum(['minhas', 'minhas_e_comunidade']),
   areaId: z.uuid().nullable(),
-  disciplineIds: z.array(z.uuid()).max(30).default([]),
+  // Em "Todas as áreas", um chip de disciplina leva os ids dela em cada área (mesmo nome) — por isso o teto folgado.
+  disciplineIds: z.array(z.uuid()).max(100).default([]),
   topics: z.array(z.string().max(120)).max(30).default([]),
   answerFormat: z.enum(['original', 'multipla', 'discursiva']).default('original'),
   count: z.number().int().min(1, 'Escolha ao menos 1 questão.').max(100),

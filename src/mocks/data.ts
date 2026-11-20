@@ -17,13 +17,31 @@ export const AREAS: Area[] = [
   { id: 'a-med', name: 'Medicina' },
   { id: 'a-mat', name: 'Matemática' },
   { id: 'a-psi', name: 'Psicologia' },
+  { id: 'a-enf', name: 'Enfermagem' },
+  { id: 'a-fis', name: 'Fisioterapia' },
 ]
 
 export const DISCIPLINES: Discipline[] = [
   { id: 'd-gin', areaId: 'a-med', name: 'Ginecologia' },
   { id: 'd-card', areaId: 'a-med', name: 'Cardiologia' },
+  { id: 'd-med-farm', areaId: 'a-med', name: 'Farmacologia' },
+  { id: 'd-med-anat', areaId: 'a-med', name: 'Anatomia' },
+  { id: 'd-med-fisio', areaId: 'a-med', name: 'Fisiologia' },
+  { id: 'd-med-pneu', areaId: 'a-med', name: 'Pneumologia' },
+  { id: 'd-med-ped', areaId: 'a-med', name: 'Pediatria' },
+  { id: 'd-med-sc', areaId: 'a-med', name: 'Saúde Coletiva' },
   { id: 'd-calc', areaId: 'a-mat', name: 'Cálculo' },
+  { id: 'd-mat-alg', areaId: 'a-mat', name: 'Álgebra Linear' },
+  { id: 'd-mat-est', areaId: 'a-mat', name: 'Estatística' },
   { id: 'd-dev', areaId: 'a-psi', name: 'Psicologia do Desenvolvimento' },
+  { id: 'd-psi-soc', areaId: 'a-psi', name: 'Psicologia Social' },
+  { id: 'd-psi-est', areaId: 'a-psi', name: 'Estatística' },
+  { id: 'd-enf-farm', areaId: 'a-enf', name: 'Farmacologia' },
+  { id: 'd-enf-fund', areaId: 'a-enf', name: 'Fundamentos de Enfermagem' },
+  { id: 'd-enf-sc', areaId: 'a-enf', name: 'Saúde Coletiva' },
+  { id: 'd-fis-anat', areaId: 'a-fis', name: 'Anatomia' },
+  { id: 'd-fis-cin', areaId: 'a-fis', name: 'Cinesiologia' },
+  { id: 'd-fis-resp', areaId: 'a-fis', name: 'Fisioterapia Respiratória' },
 ]
 
 export { GROUPS, QUESTIONS } from './questions'
