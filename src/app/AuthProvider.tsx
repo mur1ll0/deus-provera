@@ -42,9 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const mode = me.data?.mode ?? 'real'
   const realUser = me.data?.user ?? null
 
+  // Não usar queryClient.clear(): ele remove a query ['me'] observada pelo useQuery acima, e o
+  // setQueryData seguinte cria uma query nova que o observador não vê — a tela ficava "logada".
   const resetSession = useCallback(() => {
-    queryClient.clear()
     queryClient.setQueryData(ME_KEY, SIGNED_OUT)
+    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== ME_KEY[0] })
   }, [queryClient])
 
   // 401 em qualquer chamada: limpa o cache uma única vez; o guard redireciona para /login (FR-011).

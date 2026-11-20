@@ -12,6 +12,11 @@ const FEATURES = [
   { icon: Trophy, title: 'Ranking da turma', text: 'Pontue resolvendo simulados e acompanhe sua evolução.' },
 ]
 
+const OAUTH_ERRORS: Record<string, string> = {
+  access_denied: 'Login cancelado. Tente novamente.',
+  state_mismatch: 'A tentativa de login expirou. Clique em "Entrar com Google" de novo.',
+}
+
 export function LoginPage() {
   const auth = useAuth()
   const navigate = useNavigate()
@@ -20,10 +25,10 @@ export function LoginPage() {
   const [pending, setPending] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const from = safeRedirect(params.get('redirect') ?? (location.state as { from?: string } | null)?.from)
-  // Better Auth devolve ?error=… no errorCallbackURL (ex.: access_denied quando o usuário cancela no Google).
+  // Better Auth devolve ?error=… no errorCallbackURL (ex.: access_denied quando o usuário cancela no Google;
+  // state_mismatch quando a tela do Google ficou aberta além dos 5 min do cookie de estado).
   const oauthError = params.get('error')
-  const errorMessage =
-    startError ?? (oauthError ? (oauthError === 'access_denied' ? 'Login cancelado. Tente novamente.' : 'Não foi possível entrar com o Google. Tente novamente.') : null)
+  const errorMessage = startError ?? (oauthError ? OAUTH_ERRORS[oauthError] ?? 'Não foi possível entrar com o Google. Tente novamente.' : null)
 
   if (auth.status === 'loading') return <FullScreen>Carregando…</FullScreen>
   if (auth.user) return <Navigate to={from} replace />
