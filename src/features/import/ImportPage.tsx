@@ -12,10 +12,14 @@ import { PIPELINE_STEPS, runMockPipeline } from '@/mocks/ai'
 import { useStore } from '@/mocks/store'
 import { type DraftQuestion } from '@/mocks/model'
 import { QuestionEditor } from '@/features/questions/QuestionEditor'
-import { draftsFromImportFile, draftsFromSegments, emptyDraft, type ReviewState } from './drafts'
+import { useAuth } from '@/app/auth-context'
+import { draftsFromImportFile, draftsFromSegments, draftsFromServerJob, emptyDraft, type ReviewState } from './drafts'
+import { batchPageImages, type ImportJobView } from './importJob'
+import { JobProgressCard } from './JobProgress'
 import type { PageImageCrop } from './pageImages'
 import type { ExtractedPdf } from './pdfExtract'
 import { ReviewBoard } from './ReviewBoard'
+import { useImportJob } from './useImportJob'
 
 type Method = 'pdf' | 'agente' | 'manual'
 type Step = 'entrada' | 'processando' | 'revisao' | 'concluido'
@@ -34,6 +38,32 @@ export function ImportPage() {
   const [review, setReview] = useState<ReviewState | null>(null)
   const [savedCount, setSavedCount] = useState(0)
   const [visibility, setVisibility] = useState<Visibility>('publica')
+  // API real (sessão do Better Auth) → job no servidor; protótipo sem API → pipeline simulado
+  const real = useAuth().mode === 'real'
+  const job = useImportJob()
+  const [jobVision, setJobVision] = useState(false)
+
+  /** Job terminou no servidor → rascunhos + cards da IA na revisão. */
+  function openJobReview(view: ImportJobView | null, fileName?: string) {
+    if (!view) return // erro/cota/cancelado: o cartão de progresso mostra o que fazer
+    setReview(draftsFromServerJob(view, visibility, fileName))
+    setStep('revisao')
+    job.reset()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function processPdf(pdf: ExtractedPdf, opts: { vision: boolean }) {
+    if (!real) return process(() => draftsFromSegments(segmentQuestions(pdf.fullText), visibility, pdf.fileName))
+    setJobVision(opts.vision && pdf.pages.some((p) => p.imageRegions.length))
+    setStep('processando')
+    openJobReview(await job.start(pdf, opts), pdf.fileName)
+  }
+
+  async function resumeJob(jobId: string, fileName?: string) {
+    setJobVision(false) // sem o PDF não há recortes: o servidor segue com o que já recebeu
+    setStep('processando')
+    openJobReview(await job.resume(jobId, fileName), fileName)
+  }
 
   async function process(build: () => ReviewState, withPipeline = true) {
     if (withPipeline) {
@@ -84,13 +114,46 @@ export function ImportPage() {
             Compartilhar as questões importadas com a comunidade (outros estudantes poderão usá-las em simulados)
           </label>
 
-          {method === 'pdf' && <PdfPanel onProcess={(pdf) => process(() => draftsFromSegments(segmentQuestions(pdf.fullText), visibility, pdf.fileName))} />}
+          {real && job.pending && job.state.status === 'idle' && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm">
+              <Loader2 size={18} className="shrink-0 text-brand-600" />
+              <p className="min-w-0 flex-1">
+                Importação em andamento: <b>{job.pending.fileName}</b>. O progresso está salvo no servidor.
+              </p>
+              <Button size="sm" onClick={() => resumeJob(job.pending!.id, job.pending!.fileName)}>
+                Continuar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={job.discardPending}>
+                Descartar
+              </Button>
+            </div>
+          )}
+
+          {method === 'pdf' && <PdfPanel real={real} onProcess={processPdf} />}
           {method === 'agente' && <AgentPanel onImport={(r) => process(() => draftsFromImportFile(r.data!, visibility), false)} />}
           {method === 'manual' && <ManualPanel visibility={visibility} onDone={(s) => process(() => s, false)} />}
         </>
       )}
 
-      {step === 'processando' && <PipelineProgress index={pipelineIndex} />}
+      {step === 'processando' &&
+        (real ? (
+          <JobProgressCard
+            state={job.state}
+            withVision={jobVision}
+            onResume={() => job.state.jobId && resumeJob(job.state.jobId, job.state.fileName ?? undefined)}
+            onBack={() => {
+              job.reset()
+              setStep('entrada')
+            }}
+            onUseAgent={() => {
+              job.reset()
+              setMethod('agente')
+              setStep('entrada')
+            }}
+          />
+        ) : (
+          <PipelineProgress index={pipelineIndex} />
+        ))}
 
       {step === 'revisao' && review && (
         <ReviewBoard
@@ -157,9 +220,10 @@ function Stepper({ step }: { step: Step }) {
 
 /* ------------------------------ PDF ------------------------------ */
 
-function PdfPanel({ onProcess }: { onProcess: (pdf: ExtractedPdf) => void }) {
+function PdfPanel({ real, onProcess }: { real: boolean; onProcess: (pdf: ExtractedPdf, opts: { vision: boolean }) => void }) {
   const input = useRef<HTMLInputElement>(null)
   const [pdf, setPdf] = useState<ExtractedPdf | null>(null)
+  const [vision, setVision] = useState(true)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -264,7 +328,17 @@ function PdfPanel({ onProcess }: { onProcess: (pdf: ExtractedPdf) => void }) {
             </div>
           )}
 
-          {usefulImages > 0 && <VisionPreview pdf={pdf} />}
+          {usefulImages > 0 && (
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 size-4 accent-brand-600" checked={vision} onChange={(e) => setVision(e.target.checked)} />
+              <span>
+                Transcrever as {usefulImages} imagens com IA (visão) — +{Math.ceil(usefulImages / 3)} chamadas, ~{Math.max(1, Math.round((usefulImages / 3) * 0.7))} min.
+                <span className="block text-xs text-muted">Desmarcado: as questões ficam com “[Imagem p. N]” para você conferir no PDF.</span>
+              </span>
+            </label>
+          )}
+
+          {usefulImages > 0 && vision && <VisionPreview pdf={pdf} />}
 
           {guard && guard.findings.length > 0 && (
             <div className="flex gap-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
@@ -287,9 +361,9 @@ function PdfPanel({ onProcess }: { onProcess: (pdf: ExtractedPdf) => void }) {
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line pt-4">
             <span className="text-xs text-muted">
               Estimativa: ~{Math.max(1, Math.ceil(segments.length / 3))} chamadas de IA (lotes de 3 questões)
-              {usefulImages > 0 && <> + {Math.ceil(usefulImages / 3)} de visão (lotes de 3 imagens)</>} <DemoTag />
+              {usefulImages > 0 && vision && <> + {Math.ceil(usefulImages / 3)} de visão (lotes de 3 imagens)</>} {!real && <DemoTag />}
             </span>
-            <Button size="lg" disabled={!segments.length} onClick={() => onProcess(pdf)}>
+            <Button size="lg" disabled={!segments.length} onClick={() => onProcess(pdf, { vision: vision && usefulImages > 0 })}>
               Processar com IA →
             </Button>
           </div>
@@ -311,7 +385,7 @@ function VisionPreview({ pdf }: { pdf: ExtractedPdf }) {
     setProgress({ done: 0, total: 1 })
     try {
       // pdf.js já foi carregado na extração; o módulo de recortes vem sob demanda
-      const { renderPageImages, batchPageImages } = await import('./pageImages')
+      const { renderPageImages } = await import('./pageImages')
       const out = await renderPageImages(pdf, { onProgress: (done, total) => setProgress({ done, total }) })
       setCrops(out)
       setBatches(batchPageImages(out).length)

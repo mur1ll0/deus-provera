@@ -1,5 +1,5 @@
 import { inspectText } from '../../../shared/guardrails'
-import { reflowTranscription, type ImageKind } from '../../../shared/page-images'
+import { dropCutoffTail, recoverPopqGrids, reflowTranscription, type ImageKind } from '../../../shared/page-images'
 import { AiUnavailableError, callStructured, type AttemptLog } from '../client'
 import { VISION_SYSTEM } from '../prompts'
 import { visionSchema, type VisionBatch } from '../schemas'
@@ -46,6 +46,8 @@ type VisionItem = VisionBatch['imagens'][number]
 
 /** Problema de UM item (vira falha só daquela imagem, que é tentada de novo sozinha). */
 export function visionItemProblem(it: VisionItem): string | null {
+  // Degeneração medida no nemotron-VL ("QUESTÃO 2 2 2 2 2…" até o limite de tokens): falha → 2ª tentativa sozinha
+  if (/(\S+)(?:\s+\1){12,}/.test(it.transcricao)) return `Imagem ${it.id}: transcrição repetitiva — transcreva só o que está na imagem.`
   if (it.tipo !== 'pop_q') return null
   const found = POPQ_POINTS.filter((p) => new RegExp(`(^|[^a-z])${p}\\s*[:=]?\\s*([+\\-−–]?\\s*\\d|—|-{1,3}(?!\\d))`, 'i').test(it.transcricao))
   return found.length < 7 ? `Imagem ${it.id}: use o formato "POP-Q — Aa <v>; Ba <v>; C <v>; HG <v>; CP <v>; CVT <v>; Ap <v>; Bp <v>; D <v>".` : null
@@ -68,11 +70,20 @@ export function checkVision(v: VisionBatch, ids: string[]): string | null {
 }
 
 /** Normaliza a saída: guardrail no texto transcrito (a imagem também pode carregar injeção), limites, POP-Q. */
-function cleanTranscription(kind: ImageKind, raw: string): { text: string; risky: boolean } {
-  const g = inspectText(raw)
+export function cleanTranscription(kind: ImageKind, raw: string): { text: string; risky: boolean } {
+  // o nemotron-VL às vezes separa linhas com "<br>" em vez de "\n"
+  const g = inspectText(raw.replace(/<br\s*\/?>/gi, '\n'))
   let text = g.clean.trim().slice(0, 6000)
-  if (kind === 'pop_q') text = text.replace(/\s*[−–]\s*(?=\d)/g, ' -').replace(/\s+/g, ' ')
-  if (kind === 'texto') text = reflowTranscription(text)
+  // fragmento da questão seguinte cortado na borda da foto não vira questão parcial (shared/page-images.ts)
+  if (kind === 'texto') text = dropCutoffTail(reflowTranscription(text))
+  // quadro POP-Q "achatado" ("+2 Aa +1 Ba…") → "POP-Q — Aa +2; Ba +1; …" (shared/page-images.ts)
+  if (kind === 'texto' || kind === 'pop_q') text = recoverPopqGrids(text)
+  // linhas de quadro POP-Q (sozinho ou dentro de um texto): "Ba - 3" / "Aa + 1" / "C −7" → "Ba -3" / "Aa +1" / "C -7"
+  const normPopq = (l: string) => l.replace(/\s+/g, ' ').replace(/([;:—]|\b[A-Za-z]{1,3})\s*([+\-−–])\s*(?=\d)/g, (_, k: string, s: string) => `${k} ${s === '+' ? '+' : '-'}`)
+  text = text
+    .split('\n')
+    .map((l) => (/POP-?Q\s*[—–-]/i.test(l) ? normPopq(l).trim() : l))
+    .join('\n')
   return { text, risky: g.risk === 'alto' }
 }
 

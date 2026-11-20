@@ -47,12 +47,12 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T028 Extração local com detecção de imagens e escaneados (`src/features/import/pdfExtract.ts`)
 - [x] T029 Painel de PDF com resumo, aviso de imagens, aviso de guardrail, texto extraído e estimativa de chamadas (`src/features/import/ImportPage.tsx` › `PdfPanel`)
 - [x] T030 Rotas `POST /api/imports` (pdf_ia), `POST /:id/run`, `GET /:id` (`server/routes/imports.ts`)
-- [ ] T031 Hook `useImportJob`: cria job, chama `/run` em loop (até `revisao`/`falhou`/429), mostra o nó atual, permite retomar jobs `processando` (`src/features/import/useImportJob.ts`)
-- [ ] T032 Substituir o `runMockPipeline` e o `classifyText` mock pelo job real (`src/features/import/ImportPage.tsx`, `src/features/import/drafts.ts`)
+- [x] T031 Hook `useImportJob`: cria job, chama `/run` em loop (até `revisao`/`falhou`/429), mostra o nó atual (GET a cada 4 s durante o `/run`), permite retomar o job `processando` salvo no navegador (`src/features/import/useImportJob.ts`, fluxo em `src/features/import/importJob.ts`, tela em `src/features/import/JobProgress.tsx`) + teste de ponta a ponta cliente ↔ rota ↔ grafo (`src/features/import/__tests__/importJob.test.ts`)
+- [x] T032 Com sessão real, o PDF vai pelo job real (`draftsFromServerJob` monta a revisão com os cards e sinalizações da IA); `runMockPipeline`/`classifyQuestion` ficam só no modo protótipo sem API (`src/features/import/ImportPage.tsx`, `src/features/import/drafts.ts`)
 - [ ] T033 Classificar em lotes de até 40 questões e mesclar os grupos por área/disciplina/assunto (`server/ai/pipelines/import-graph.ts` › `classify`)
 - [ ] T034 Dividir no cliente textos > 4 MB em vários jobs e truncar páginas > 60.000 caracteres com aviso (`src/features/import/useImportJob.ts`)
 - [ ] T035 Lista "Importações em andamento" na página de importação (`GET /api/imports?status=processando`, `server/routes/imports.ts`, `src/features/import/ImportPage.tsx`)
-- [ ] T036 Mensagem de cota esgotada (429) sugerindo o agente externo (`src/features/import/ImportPage.tsx`)
+- [x] T036 Mensagem de cota esgotada (429) sugerindo o agente externo, com "Tentar continuar" do checkpoint (`src/features/import/JobProgress.tsx`)
 - [ ] T037 Conjunto de avaliação PT-BR (20 blocos dos PDFs de exemplo com gabarito estruturado) + script `npm run ai:eval` (`server/ai/eval/`, `package.json`) para SC-002/SC-004
 
 ## Fase 5 — US3 Revisão em cards (P1)
@@ -84,7 +84,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T049 [P] Localizar as imagens úteis (CTM + recorte do pdf.js), marcar `[[imagem pN-k]]` no texto e renderizar só o RECORTE em JPEG (lado ~1400 px, 1,5–4×, qualidade 0,75), em lotes ≤ 3 e < 4,5 MB; prévia "Ver recortes" na tela (`shared/page-images.ts`, `src/features/import/pdfExtract.ts`, `src/features/import/pageImages.ts`, `src/features/import/ImportPage.tsx`) + testes (`shared/__tests__/page-images.test.ts`)
 - [x] T050 `POST /api/imports/:id/images` + nó `vision` (cadeia `vision`, 2ª tentativa individual, guardrail na transcrição) antes de `segment`, inserindo `[Imagem p. N: …]` na questão e preenchendo `tem_imagem`/`descricao_imagem` (`server/routes/imports.ts`, `server/ai/pipelines/import-graph.ts`, `server/ai/pipelines/vision.ts`, `server/ai/client.ts` com partes de imagem) + testes (`server/__tests__/vision.test.ts`)
 - [x] T059 Medir a visão: `npm run eval:import -- --vision` (recortes em Node com `@napi-rs/canvas`, mesmo nó do grafo, métricas de questões com imagem e POP-Q ponto a ponto) e registrar em docs/10 §7 (`scripts/eval-import.ts`, `scripts/pdf-images-node.ts`)
-- [ ] T060 No hook `useImportJob` (T031): criar o job com `pdfJobPayload()`, chamar `renderPageImages()` + `uploadPageImages()` antes do loop de `/run`, mostrar o progresso da visão e tratar 429 (seguir sem visão) (`src/features/import/useImportJob.ts`)
+- [x] T060 No hook `useImportJob` (T031): criar o job com `pdfJobPayload()`, chamar `renderPageImages()` + `uploadPageImages()` antes do loop de `/run`, mostrar o progresso da visão (recortes e lotes) e tratar 429 (seguir sem visão); opção "Transcrever as N imagens com IA" na tela de PDF (`src/features/import/importJob.ts`, `src/features/import/useImportJob.ts`, `src/features/import/ImportPage.tsx`). **Não testado ao vivo** contra Neon + login Google (credenciais ainda não configuradas no `.env`)
 - [ ] T051 [P] Conjunto de ataques de injeção embutidos em PDF/JSON + teste de que a saída não muda (SC-005) (`server/__tests__/injection.test.ts`)
 - [ ] T052 [P] Teste E2E do fluxo agente externo → revisão → salvar (Playwright) (`e2e/import.spec.ts`)
 - [ ] T053 Medir SC-001 (tempo de extração) e SC-002 (requisições por PDF) e registrar em `docs/05-pipeline-ia.md`

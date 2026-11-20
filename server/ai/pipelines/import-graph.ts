@@ -1,5 +1,5 @@
 import { inspectText, wrapUntrusted, type RiskLevel } from '../../../shared/guardrails'
-import { fullTextWithImages, imageDescriptionsIn, type ImageKind } from '../../../shared/page-images'
+import { fullTextWithImages, imageDescriptionsIn, missingImageBrackets, type ImageKind } from '../../../shared/page-images'
 import { importQuestionSchema, type ImportQuestion } from '../../../shared/schemas/import'
 import { heuristicKeyPoints, segmentQuestions, type SegmentedQuestion } from '../../../shared/segmenter'
 import { AiUnavailableError, callStructured, type AttemptLog } from '../client'
@@ -273,19 +273,25 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
         onAttempt: (l) => aiLog.push(l),
       })
       const seen = new Set<string>()
+      // texto devolvido por bloco (um bloco pode virar mais de uma questão)
+      const outByBlock: Record<string, string> = {}
+      for (const q of r.value.questoes) outByBlock[q.bloco_id] = `${outByBlock[q.bloco_id] ?? ''}\n${q.enunciado}\n${q.perguntas.map((p) => `${p.texto}\n${p.resposta_esperada ?? ''}`).join('\n')}`
       for (const q of r.value.questoes) {
         const b = byId[q.bloco_id]
         if (!b) continue
         const id = seen.has(q.bloco_id) ? `${q.bloco_id}-${seen.size + 1}` : q.bloco_id
+        const first = !seen.has(q.bloco_id)
         seen.add(q.bloco_id)
         const img = imageFields(b.text)
+        // A IA às vezes omite o quadro/figura transcrito (ex.: POP-Q na página seguinte): reanexa ao enunciado
+        const lost = first ? missingImageBrackets(b.text, outByBlock[q.bloco_id]) : []
         drafts[id] = {
           id,
           blockId: q.bloco_id,
           area: 'Sem área',
           disciplina: 'Sem disciplina',
           rotulo: q.rotulo ?? b.seg.sourceLabel ?? null,
-          enunciado: q.enunciado,
+          enunciado: lost.length ? `${q.enunciado}\n${lost.join('\n')}`.slice(0, 12000) : q.enunciado,
           perguntas: q.perguntas,
           dificuldade: q.dificuldade,
           tem_imagem: q.tem_imagem || !!img.tem_imagem,

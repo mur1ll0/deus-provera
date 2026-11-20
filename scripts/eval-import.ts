@@ -254,7 +254,9 @@ function matchQuestions(gold: GoldQuestion[], pred: PredQuestion[]): { matches: 
       const pText = qText(p)
       // Questões que dependem de imagem também podem casar pelo conteúdo transcrito (ex.: enunciado só com quadro POP-Q)
       const sim = Math.max(dice(gText, pText), g.image ? diceImg(gText, pText) : 0)
-      const near = p.page != null && Math.abs(p.page - g.page) <= 2 ? 0.1 : 0
+      // proximidade de página desempata conteúdo repetido (ex.: o mesmo par de questões nas pp. 24, 26 e 28)
+      const dist = p.page != null ? Math.abs(p.page - g.page) : 99
+      const near = dist <= 2 ? 0.1 - 0.02 * dist : 0
       if (sim >= 0.3) pairs.push({ gi, pi, score: sim + near, sim })
     })
   })
@@ -352,6 +354,31 @@ function evaluate(goldScope: GoldQuestion[], pred: PredQuestion[], textual: (g: 
   return { row, matches, unmatchedGold, unmatchedPred, aligned, goldText, images }
 }
 
+/**
+ * OCR dos quadros POP-Q SEM depender da segmentação: para cada quadro do gabarito, a melhor transcrição
+ * da visão na mesma página (±1). Separa "o modelo leu certo?" de "o quadro foi parar na questão certa?".
+ */
+function popqOcr(goldScope: GoldQuestion[], notes: Record<string, PageImageState>) {
+  const trans = Object.values(notes)
+    .filter((n) => n.text)
+    .flatMap((n) => popqSets(n.text!).map((set) => ({ page: n.page, set })))
+  let sets = 0
+  let exact = 0
+  let ok = 0
+  let total = 0
+  for (const g of goldScope.filter((x) => x.image)) {
+    for (const gs of popqSets(qText(g))) {
+      const keys = POPQ_POINTS.filter((k) => k in gs)
+      const best = Math.max(0, ...trans.filter((t) => Math.abs(t.page - g.page) <= 1).map((t) => keys.filter((k) => t.set[k] === gs[k]).length))
+      sets++
+      total += keys.length
+      ok += best
+      if (best === keys.length) exact++
+    }
+  }
+  return { sets, exact, points: ok / Math.max(1, total) }
+}
+
 function printRow(label: string, r: ReturnType<typeof evaluate>['row']) {
   console.log(`   [${label}] questões detectadas: ${r.predicted} · casadas: ${r.matched}`)
   console.log(`      TEXTO  recall: ${f1(r.recallTextual)} (${r.goldTextual}) · precisão: ${f1(r.precision)} · nº de perguntas: ${f1(r.sameItemCount)} · enunciado: ${f1(r.stemSimilarity)} · pergunta: ${f1(r.promptOk)} · resposta: ${f1(r.answerOk)}`)
@@ -392,7 +419,11 @@ for (const d of DOCS) {
     const total = pdf.pages.reduce((a, p) => a + p.images.length, 0)
     if (REUSE && existsSync(visionCache)) {
       notes = JSON.parse(readFileSync(visionCache, 'utf8')) as Record<string, PageImageState>
-      console.log(`   (transcrições reaproveitadas de ${visionCache})`)
+      // Reaplica o pós-processamento ATUAL (determinístico) às respostas salvas do modelo: mede ajustes
+      // em cleanTranscription/recoverPopqGrids sem novas chamadas (idempotente no que já estava limpo).
+      const { cleanTranscription } = await import('../server/ai/pipelines/vision')
+      for (const n of Object.values(notes)) if (n.status === 'ok' && n.kind && n.text) n.text = cleanTranscription(n.kind, n.text).text
+      console.log(`   (transcrições reaproveitadas de ${visionCache}, com o pós-processamento atual)`)
     } else {
       console.log(`   visão: ${total} imagem(ns) úteis em ${pdf.pages.filter((p) => p.images.length).length} páginas`)
       notes = await runVision(pdf)
@@ -427,8 +458,13 @@ for (const d of DOCS) {
   printRow(label, ev.row)
   // (cast: aiOrigin é preenchido dentro de predictWithAi, o que o fluxo de tipos do TS não enxerga)
   const origin = aiOrigin as { ai: number; fallback: number } | null
+  const ocr = VISION ? popqOcr(goldScope, notes) : null
+  if (ocr?.sets) console.log(`      OCR POP-Q (sem depender da segmentação): ${ocr.exact}/${ocr.sets} quadros 100% certos · pontos: ${f1(ocr.points)}`)
   const visionStats = VISION
     ? {
+        ocrPopqQuadros: ocr?.sets,
+        ocrPopqQuadros100: ocr?.exact,
+        ocrPopqPontos: ocr?.points,
         imagens: Object.keys(notes).length,
         imagensOk: Object.values(notes).filter((v) => v.status === 'ok').length,
         chamadasVisao: visionAttempts.length,

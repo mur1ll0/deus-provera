@@ -27,6 +27,8 @@ npm run gabarito:build            # (re)gera MD + JSON do gabarito
 npm run eval:import               # avalia o segmentador determinístico (sem IA)
 npm run eval:import -- --ai       # avalia o pipeline com OpenRouter (precisa OPENROUTER_API_KEY; 3 lotes/PDF por padrão)
 npm run eval:import -- --ai --batches 20
+npm run eval:import -- --vision          # + etapa de visão (recortes das imagens → modelo grátis); ~1 chamada a cada 3 imagens
+npm run eval:import -- --vision --reuse  # reaproveita as transcrições salvas (sem chamadas), com o pós-processamento atual
 ```
 
 Saídas: resumo no console + `samples/private/eval/relatorio-*.md` (lista de questões não encontradas, divergências de nº de perguntas, respostas mal anexadas).
@@ -42,7 +44,14 @@ Saídas: resumo no console + `samples/private/eval/relatorio-*.md` (lista de que
 | Texto da pergunta correto | Perguntas cujo texto bate (Dice ≥ 0,6) |
 | Resposta na pergunta certa | F1 de cobertura entre a resposta detectada e a do gabarito ≥ 0,6 (penaliza "engolir" a próxima pergunta) |
 
-Questões que dependem de foto/esquema ficam fora do recall "com texto" — são o trabalho da etapa de **visão** (ou do agente externo).
+Questões que dependem de foto/esquema ficam fora do recall "com texto" — são o trabalho da etapa de **visão** (ou do agente externo), medidas à parte (§7):
+
+| Métrica (questões com metadado "Imagem") | Definição |
+|---|---|
+| Detectadas | Casadas com alguma questão detectada (pelo texto, ou pelo conteúdo transcrito da imagem) |
+| Conteúdo da imagem recuperado | POP-Q: **todos** os pontos do quadro certos na questão casada. Demais: a questão casada contém a transcrição (`[Imagem p. N…`) e ≥ 60% das palavras da questão do gabarito |
+| POP-Q 100% certos / pontos POP-Q certos | Quadro exato (9/9) / fração de pontos certos **na questão certa** |
+| OCR POP-Q | Melhor transcrição na mesma página (±1) contra o quadro do gabarito — mede a leitura do modelo **sem depender da segmentação** |
 
 ## 4. Resultados — segmentador determinístico (sem IA), 2026-11-20
 
@@ -63,7 +72,7 @@ Evolução durante a avaliação (mesmos PDFs):
 
 | Caso | Exemplo | Quem resolve |
 |---|---|---|
-| Conteúdo só em imagem (70 questões nos 2 PDFs) | quadros POP-Q, enunciados fotografados, prints | Etapa de **visão** (páginas renderizadas → modelo multimodal) ou **agente externo** |
+| Conteúdo só em imagem (70 questões nos 2 PDFs) | quadros POP-Q, enunciados fotografados, prints | Etapa de **visão** (recorte de cada imagem → modelo multimodal grátis) — medida na §7 — ou **agente externo** |
 | Questões sem número/rótulo | "Maria tem 67 anos e informa…" no meio da seção | Etapa de **estruturação com IA** (o LLM recebe o bloco e separa) |
 | Anotações de aluno que não são questões | "41: 1) Explicar os fenótipos de SOP…", "Dava o caso de CA de mama…" | IA marca como `descartados` ou revisão humana |
 | Respostas em "A) B) C)" separadas das perguntas a/b/c | quadros POP-Q da Unidade II | Regra no prompt de estruturação (já incluída) |
@@ -98,7 +107,7 @@ npm run eval:import -- --ai --batches 12 --pdf u3     # amostra; --reuse recalcu
 | **Com IA** | **100%** | **95,0%** | **100%** | **97,6%** | **94,9%** |
 | Sem IA (segmentador) | 100% | 90,5% | 84,2% | 87,8% | 87,2% |
 
-A IA melhora principalmente a **separação enunciado × perguntas** (+16 pontos no nº de perguntas certo) e o **texto das perguntas** (+10). Na Unidade II, os primeiros lotes caem nos quadros POP-Q (só imagem) — ali nem a IA de texto nem o segmentador acertam; é trabalho da etapa de **visão** (próximo passo a medir).
+A IA melhora principalmente a **separação enunciado × perguntas** (+16 pontos no nº de perguntas certo) e o **texto das perguntas** (+10). Na Unidade II, os primeiros lotes caem nos quadros POP-Q (só imagem) — ali nem a IA de texto nem o segmentador acertam; é trabalho da etapa de **visão** (medida na §7).
 
 > Limitações: amostra de 21 questões de um PDF; o modelo gratuito pode mudar/cair (o fallback cobre). Repita `npm run eval:import -- --ai` periodicamente e antes de trocar modelos em `server/ai/models.ts`.
 
@@ -111,3 +120,85 @@ A IA melhora principalmente a **separação enunciado × perguntas** (+16 pontos
 | Assuntos > 80 caracteres rejeitavam a importação inteira | Campos curtos tolerantes (truncam com "…") |
 | Perguntas sem resposta no material (75 nos 2 PDFs) | Continuam no rascunho com selo "sem resposta — revise"; o JSON v2 exige resposta para salvar |
 | Mesmo rótulo ("QUESTÃO 1") repetido em várias seções | IDs internos independentes do rótulo; rótulo guardado em `sourceLabel` |
+
+## 7. Etapa de visão (imagens das páginas) — 2026-11-20
+
+Implementação: [docs/05 §5.1](05-pipeline-ia.md). Em resumo: cada imagem útil é localizada no PDF (matriz + recorte do pdf.js), o **recorte** vira JPEG (~40–100 KB) e vai, de 3 em 3, ao modelo de visão gratuito; a transcrição entra no texto da página **antes da segmentação** (`[Imagem p. N: POP-Q — …]` ou o texto da foto). Avaliação: o **mesmo nó `vision` do grafo**, com os recortes renderizados em Node (`scripts/pdf-images-node.ts`, `@napi-rs/canvas`) no lugar dos que o navegador envia.
+
+```bash
+npm run eval:import -- --vision            # visão + segmentador (compara com "sem visão" no mesmo gabarito)
+npm run eval:import -- --vision --reuse    # recalcula com as transcrições salvas (0 chamadas)
+npm run eval:import -- --ai --vision --reuse --batches 10 --pdf u2   # + IA de estruturação num trecho
+```
+
+### 7.1 Resultado final — segmentador + visão (rodada v3, 2026-11-20)
+
+| | Unidade II **sem** visão | Unidade II **com** visão | III UNIDADE **sem** visão | III UNIDADE **com** visão |
+|---|---|---|---|---|
+| **Questões com imagem detectadas** | 36,2% (de 47) | **93,6%** | 13,0% (de 23) | **82,6%** |
+| **Conteúdo da imagem recuperado** | 0% | **83,0%** | 0% | **47,8%** |
+| Quadro POP-Q exato **na questão certa** | 0% (de 41) | **95,1%** (39/41) | — | — |
+| Pontos POP-Q certos na questão certa | 0% | **95,6%** | — | — |
+| OCR POP-Q (leitura, sem depender da segmentação) | — | **41/43 quadros exatos · 95,6% dos pontos** | — | — |
+| Texto: recall | 92,1% | 92,1% | 90,4% | **91,6%** |
+| Texto: precisão | 96,2% | 96,2% | 95,1% | **96,0%** |
+| Texto: nº de perguntas / pergunta / resposta | 96,6 / 87,8 / 89,9% | 96,6 / 87,8 / 89,9% | 90,7 / 91,3 / 95,0% | 90,8 / 91,4 / 95,0% |
+
+**As métricas de texto não pioraram** (U2 idênticas; U3 +1,2 recall, +0,9 precisão). Variância entre rodadas do modelo (mesmo código, respostas da rodada v2): U2 POP-Q exato na questão certa 92,7%, OCR 40/43; U3 precisão 95,0% e conteúdo recuperado 52,2% — ou seja, ±1 ponto nas métricas de texto e ±3–5 pontos nas de imagem de uma rodada para outra.
+
+> A regra `dropCutoffTail` (fragmento de questão cortado na borda da foto) entrou depois da rodada v3 e foi medida reaplicando o pós-processamento às mesmas respostas do modelo (`--reuse`); todas as outras regras estavam ativas na rodada.
+
+**Custo e tempo (rodada v3, sem cache):**
+
+| | Unidade II | III UNIDADE |
+|---|---|---|
+| Imagens úteis / recortes JPEG | 46 / 1,8 MB | 18 / 1,6 MB (+0,4 MB de reenvio) |
+| Lotes (requisições no orçamento) | 16 | 9 (6 + 3 reenvios individuais) |
+| Tentativas no OpenRouter (com fallback) | 17 (16 ok) | 13 (7 ok) |
+| Tempo total / mediana por lote de 3 | 664 s / ~32 s | 599 s (2 lotes esgotaram os 240 s) |
+| Imagens transcritas | 46/46 | 17/18 (1 falhou nas 2 tentativas → `[Imagem p. N]`) |
+| Modelos que responderam | só `nvidia/nemotron-3.5-super-vl:free` | idem |
+
+Custo em dinheiro: **US$ 0**. No orçamento diário: ~1 requisição a cada 3 imagens (+1 por imagem que precisar de 2ª tentativa).
+
+**Com a IA de estruturação (caminho de produção), trecho dos 10 primeiros lotes da Unidade II** (22 questões do gabarito, 18 dependem de imagem — é a parte dos quadros POP-Q):
+
+| Mesmo trecho | Com imagem: detectadas | Quadro POP-Q exato na questão certa | Texto: recall (4 questões) | Precisão |
+|---|---|---|---|---|
+| Sem IA, sem visão | 61,1% | 0% | 50% | 100% |
+| Sem IA + visão | 100% | 88,9% | 50% | 90,9% |
+| **IA + visão** | **100%** | **88,9%** (= teto do OCR no trecho, 16/18) | **75%** | 91,3% |
+
+Na 1ª tentativa a IA **omitiu** o quadro `[Imagem p. 15: POP-Q …]` de uma questão (estava na página seguinte) e caiu para 83,3%; agora o nó `structure` reanexa ao enunciado todo colchete de imagem do bloco que a IA não devolveu (`missingImageBrackets`). Em 1 de 10 lotes a IA reprovou no grounding (resposta não literal) e o lote caiu no fallback determinístico — sem perda de questão. 13 chamadas (9 ok), todas pelo `ernie-5.5-flash`.
+
+### 7.2 Como chegamos lá (cada rodada com o modelo real)
+
+| Rodada | Mudança | U2: detectadas · POP-Q exato na questão | U2: OCR POP-Q | U3: detectadas · conteúdo |
+|---|---|---|---|---|
+| sem visão | — | 36,2% · 0% | — | 13,0% · 0% |
+| v1 | prompt inicial; recorte por imagem respeitando o *clip* do PDF | 61,7% · 41,5% | 34/43 | 87,0% · 52,2% |
+| v2 | rótulo "QUESTÃO N" de dentro da imagem fora do colchete; texto + quadro → `texto` com linha `POP-Q — …`; rejeitar saída repetitiva | 87,2% · 41,5% | 33/43 | 82,6% · 52,2% |
+| v2 + pós-processamento | recuperar quadro "achatado", `<br>` → quebra, unir enunciado-foto + respostas digitadas de mesmo rótulo, desempate por página no avaliador | 100% · 92,7% | 40/43 | 82,6% · 52,2% |
+| **v3 (final)** | tudo acima, rodada do zero + corte de fragmento na borda | **93,6% · 95,1%** | **41/43** | **82,6% · 47,8%** |
+
+(v1 e v2 "cru" foram medidos com o avaliador antigo, que dava o mesmo bônus a ±2 páginas; o desempate novo não muda nenhuma métrica sem visão.)
+
+### 7.3 Onde o modelo gratuito falha (medido, não estimado)
+
+| Falha | Onde | Tratamento |
+|---|---|---|
+| **Cadeia na prática tem 1 modelo**: gemma-4-31b/26b, ling-3.2-flash e particle-1 devolveram **429 do provedor** em todas as tentativas do dia; nemotron-3-nano-omni voltou vazio; gemma respondeu uma vez com JSON inválido | todas as rodadas | 2ª tentativa individual; o que sobrar vira `[Imagem p. N]` com `tem_imagem` (nunca perde a questão) |
+| **Erro do provedor** no nemotron derruba o lote inteiro e os fallbacks esgotam os 240 s | 1–2 lotes por rodada | reenvio individual da imagem (recuperou 3/3 na U2 v1; 2/3 na U3 v3) |
+| Quadro POP-Q "achatado" ("+2 Aa +1 Ba…", às vezes com `<br>`) mesmo pedindo o formato | pp. 24, 26, 28 da U2 | `recoverPopqGrids`: com os 9 rótulos na ordem e 9 valores, o k-ésimo valor vai para o k-ésimo rótulo |
+| **Degeneração**: "QUESTÃO 2 2 2 2 2…" até o limite de tokens | U2 p. 26 e 28 (v1) | saída repetitiva reprova só aquela imagem → 2ª tentativa |
+| Foto com enunciado **e** quadro partida em 2 imagens no PDF (o quadro fica cortado entre elas) | U2 pp. 5–7 | sem solução automática: as 2 transcrições entram, o quadro sai incompleto — são exatamente os **2 quadros que não batem** na v3 (U2-006, U2-007) |
+| Foto mostra pedaços das questões vizinhas (cortadas na borda) | U2 pp. 5–6, U3 pp. 11, 101 | `dropCutoffTail` remove o fragmento final com reticências; o do início da foto fica (vira texto extra na questão anterior) |
+| **"Completou" texto cortado**: a 1ª linha cortada de uma foto foi transcrita copiando a linha de baixo | U3 p. 11 | não detectável automaticamente — a revisão mostra a transcrição |
+| Uma foto com 3 questões (caso comum + "QUESTÃO 17/18/19") ou várias questões numa página escaneada | U3 pp. 38, 81–82 | detectadas, mas o texto da foto fica numa questão só: conteúdo "recuperado" em só ~50% das questões com imagem da U3 |
+| Figuras clínicas (lesão, colposcopia, gráfico) | U3 pp. 34, 35, 110 | descrição objetiva + legenda (3/3 coerentes na inspeção); o gabarito descreve com outras palavras, então só a detecção da questão é medida |
+
+### 7.4 Conclusão
+
+- Com visão, **quase todo o conteúdo que só existia em imagem passa a chegar ao importador**: 63 das 70 questões dependentes de imagem são detectadas (antes: 20) e os valores POP-Q chegam exatos na questão certa em 39/41 casos — sem custo em dinheiro e sem piorar o texto.
+- O ponto fraco não é a leitura (95% dos pontos POP-Q certos), e sim **disponibilidade** (um modelo só respondendo; 2 de 25 lotes estouraram o prazo) e **fotos com várias questões**. Para PDFs só de fotos, o **agente externo** continua mais confiável.
+- Antes de trocar a cadeia `vision` em `server/ai/models.ts`, rode `npm run eval:import -- --vision` (≈25 requisições para os 2 PDFs) e compare com a §7.1.

@@ -1,9 +1,10 @@
 import type { QuestionItem, Visibility } from '@shared/domain'
 import { inspectText } from '@shared/guardrails'
-import type { ImportFile } from '@shared/schemas/import'
+import type { ImportFile, ImportQuestion } from '@shared/schemas/import'
 import { heuristicKeyPoints, type SegmentedQuestion } from '@shared/segmenter'
 import { classifyQuestion } from '@/mocks/ai'
 import { emptyItem, uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
+import type { ServerCard, ServerDraft } from './importJob'
 
 export interface ReviewState {
   cards: ImportCard[]
@@ -68,43 +69,75 @@ export function draftsFromSegments(items: SegmentedQuestion[], visibility: Visib
   return { cards: describeCards([...cards.values()], drafts), drafts, source: 'pdf_ia', fileName }
 }
 
+/** Uma questão no contrato v2 → rascunho da revisão (guardrail reaplicado em todos os campos de texto). */
+function draftFromImportQuestion(q: ImportQuestion, visibility: Visibility, origin: DraftQuestion['origin'], extraFlags: string[] = []): DraftQuestion {
+  const flags = new Set<string>(extraFlags)
+  return {
+    id: uid('dq'),
+    sourceLabel: q.rotulo ?? undefined,
+    stem: guard(q.enunciado, flags) ?? q.enunciado,
+    items: q.perguntas.map((p) => ({
+      id: uid('it'),
+      label: p.rotulo ?? undefined,
+      prompt: guard(p.texto, flags) ?? p.texto,
+      type: p.tipo,
+      expectedAnswer: guard(p.resposta_esperada, flags),
+      keyPoints: p.pontos_chave?.map((k) => guard(k, flags) ?? k),
+      alternatives: p.alternativas?.map((a) => ({
+        id: uid('alt'),
+        text: guard(a.texto, flags) ?? a.texto,
+        correct: a.correta,
+        explanation: guard(a.explicacao, flags),
+        source: a.gerada_por_ia ? ('ia' as const) : ('usuario' as const),
+      })),
+    })),
+    difficulty: q.dificuldade ?? 'media',
+    visibility,
+    origin,
+    hasImage: q.tem_imagem ?? undefined,
+    imageDescription: guard(q.descricao_imagem, flags),
+    flags: [...flags],
+  }
+}
+
 /** JSON v2 (agente externo) → rascunhos + cards conforme área/disciplina/assunto informados. */
 export function draftsFromImportFile(file: ImportFile, visibility: Visibility): ReviewState {
   const drafts: Record<string, DraftQuestion> = {}
   const cards = new Map<string, ImportCard>()
 
   for (const q of file.questoes) {
-    const flags = new Set<string>()
-    const id = uid('dq')
-    drafts[id] = {
-      id,
-      sourceLabel: q.rotulo ?? undefined,
-      stem: guard(q.enunciado, flags) ?? q.enunciado,
-      items: q.perguntas.map((p) => ({
-        id: uid('it'),
-        label: p.rotulo ?? undefined,
-        prompt: guard(p.texto, flags) ?? p.texto,
-        type: p.tipo,
-        expectedAnswer: guard(p.resposta_esperada, flags),
-        keyPoints: p.pontos_chave?.map((k) => guard(k, flags) ?? k),
-        alternatives: p.alternativas?.map((a) => ({
-          id: uid('alt'),
-          text: guard(a.texto, flags) ?? a.texto,
-          correct: a.correta,
-          explanation: guard(a.explicacao, flags),
-          source: a.gerada_por_ia ? ('ia' as const) : ('usuario' as const),
-        })),
-      })),
-      difficulty: q.dificuldade ?? 'media',
-      visibility,
-      origin: 'agente_externo',
-      hasImage: q.tem_imagem ?? undefined,
-      imageDescription: guard(q.descricao_imagem, flags),
-      flags: [...flags],
-    }
-    upsertCard(cards, q.area, q.disciplina, q.assunto ?? '', id)
+    const d = draftFromImportQuestion(q, visibility, 'agente_externo')
+    drafts[d.id] = d
+    upsertCard(cards, q.area, q.disciplina, q.assunto ?? '', d.id)
   }
   return { cards: describeCards([...cards.values()], drafts), drafts, source: 'agente_externo', fileName: file.origem?.arquivo ?? undefined }
+}
+
+/**
+ * Resultado do job no servidor (GET /api/imports/:id em `revisao`) → rascunhos + cards da revisão.
+ * Mantém os cards e descrições da IA, as sinalizações do pipeline ("Processado sem IA — revise", visão…)
+ * e manda para "Revisar categoria" qualquer questão que nenhum card tenha citado.
+ */
+export function draftsFromServerJob(view: { cards?: ServerCard[]; drafts?: Record<string, ServerDraft> }, visibility: Visibility, fileName?: string): ReviewState {
+  const drafts: Record<string, DraftQuestion> = {}
+  const idMap = new Map<string, string>()
+  for (const [serverId, q] of Object.entries(view.drafts ?? {})) {
+    const imageFlags = q.descricao_imagem?.includes('imagem não transcrita') ? ['Imagem não transcrita — confira no PDF'] : []
+    const d = draftFromImportQuestion(q, visibility, 'pdf_ia', [...(q.flags ?? []), ...imageFlags])
+    drafts[d.id] = d
+    idMap.set(serverId, d.id)
+  }
+  const placed = new Set<string>()
+  const cards: ImportCard[] = (view.cards ?? [])
+    .map((c) => {
+      const questionIds = c.questionIds.map((id) => idMap.get(id)).filter((id): id is string => !!id && !placed.has(id))
+      for (const id of questionIds) placed.add(id)
+      return { id: uid('card'), area: c.area, discipline: c.disciplina, topic: c.assunto, description: c.descricao, questionIds }
+    })
+    .filter((c) => c.questionIds.length)
+  const orphans = Object.keys(drafts).filter((id) => !placed.has(id))
+  if (orphans.length) cards.push({ id: uid('card'), area: 'Sem área', discipline: 'Sem disciplina', topic: 'Revisar categoria', description: '', questionIds: orphans })
+  return { cards: describeCards(cards, drafts), drafts, source: 'pdf_ia', fileName }
 }
 
 /** Resumo automático do card (no produto: gerado pela IA na etapa de categorização). */

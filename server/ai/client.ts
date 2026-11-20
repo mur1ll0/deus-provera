@@ -25,12 +25,14 @@ function openrouter() {
   return provider
 }
 
+// (sem "parameter properties": o front também compila este arquivo — erasableSyntaxOnly — nos testes do importador)
 export class AiUnavailableError extends Error {
-  constructor(
-    readonly task: AiTask,
-    readonly attempts: AttemptLog[],
-  ) {
+  readonly task: AiTask
+  readonly attempts: AttemptLog[]
+  constructor(task: AiTask, attempts: AttemptLog[]) {
     super(`Nenhum modelo conseguiu concluir a tarefa "${task}".`)
+    this.task = task
+    this.attempts = attempts
   }
 }
 
@@ -39,16 +41,16 @@ export class AiUnavailableError extends Error {
  * então a cadeia de fallback é interrompida e a mensagem orienta o que fazer.
  */
 export class AiConfigError extends Error {
-  constructor(
-    readonly kind: 'auth' | 'credits',
-    readonly status: number | undefined,
-    detail: string,
-  ) {
+  readonly kind: 'auth' | 'credits'
+  readonly status: number | undefined
+  constructor(kind: 'auth' | 'credits', status: number | undefined, detail: string) {
     super(
       kind === 'auth'
         ? `Chave do OpenRouter recusada (HTTP ${status ?? '?'}). Confira OPENROUTER_API_KEY no .env ou crie outra em https://openrouter.ai/keys. ${detail}`
         : `Saldo do OpenRouter negativo/insuficiente (HTTP 402) — isso bloqueia até modelos gratuitos. Veja https://openrouter.ai/settings/credits. ${detail}`,
     )
+    this.kind = kind
+    this.status = status
   }
 }
 

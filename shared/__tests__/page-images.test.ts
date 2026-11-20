@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   composePageText,
+  dropCutoffTail,
   findImageRects,
   fullTextWithImages,
   imageDescriptionsIn,
   imageIdsIn,
+  missingImageBrackets,
+  recoverPopqGrids,
   reflowTranscription,
   resolveImageMarks,
   usefulImageRects,
@@ -90,14 +93,18 @@ describe('resolveImageMarks', () => {
   const text = 'Enunciado\n[[imagem p2-1]]\nPergunta\n[[imagem p2-2]]\n[[imagem p9-9]]\n[[imagem p2-1]]'
   it('cada tipo vira o formato certo; desconhecido/repetido some', () => {
     const out = resolveImageMarks(text, {
-      'p2-1': { page: 2, kind: 'pop_q', text: 'POP-Q — Aa 0; Ba +2' },
+      'p2-1': { page: 2, kind: 'pop_q', text: 'POP-Q — Aa -1; Ba +1' },
       'p2-2': { page: 2, kind: 'decorativa', text: '' },
     })
-    expect(out).toBe('Enunciado\n[Imagem p. 2: POP-Q — Aa 0; Ba +2]\nPergunta\n\n\n')
+    expect(out).toBe('Enunciado\n[Imagem p. 2: POP-Q — Aa -1; Ba +1]\nPergunta\n\n\n')
   })
   it('foto de texto entra como texto normal entre marcadores de início/fim', () => {
-    const out = resolveImageMarks('[[imagem p11-1]]', { 'p11-1': { page: 11, kind: 'texto', text: 'QUESTÃO 4. Paula…\n( ) Afirmativa' } })
-    expect(out).toBe('[Imagem p. 11 — texto da imagem:]\nQUESTÃO 4. Paula…\n( ) Afirmativa\n[Imagem p. 11 — fim]')
+    const out = resolveImageMarks('[[imagem p11-1]]', { 'p11-1': { page: 11, kind: 'texto', text: 'QUESTÃO 4. Ana, 30 anos…\n( ) Afirmativa' } })
+    expect(out).toBe('[Imagem p. 11 — texto da imagem:]\nQUESTÃO 4. Ana, 30 anos…\n( ) Afirmativa\n[Imagem p. 11 — fim]')
+  })
+  it('rótulo acima do quadro POP-Q ("QUESTÃO 1" dentro da imagem) vira texto normal antes do colchete', () => {
+    const out = resolveImageMarks('[[imagem p2-1]]', { 'p2-1': { page: 2, kind: 'pop_q', text: 'QUESTÃO 1\nPOP-Q — Aa -1; Ba +1' } })
+    expect(out).toBe('QUESTÃO 1\n[Imagem p. 2: POP-Q — Aa -1; Ba +1]')
   })
   it('sem transcrição → "[Imagem p. N]"; colchetes da transcrição não quebram o marcador', () => {
     expect(resolveImageMarks('[[imagem p5-1]]', { 'p5-1': { page: 5, text: null } })).toBe('[Imagem p. 5]')
@@ -109,18 +116,53 @@ describe('resolveImageMarks', () => {
   })
 })
 
+describe('dropCutoffTail', () => {
+  it('remove só o fragmento final cortado na borda da foto', () => {
+    const t = 'QUESTÃO 5. Paciente de 40 anos…\n( ) Afirmativa completa.\nQUESTÃO 6. Entre as condutas abaixo, qual ...'
+    expect(dropCutoffTail(t)).toBe('QUESTÃO 5. Paciente de 40 anos…\n( ) Afirmativa completa.')
+  })
+  it('não mexe quando a foto inteira é a questão, nem em questão final completa', () => {
+    expect(dropCutoffTail('QUESTÃO 6. Entre as condutas abaixo ...')).toBe('QUESTÃO 6. Entre as condutas abaixo ...')
+    const full = 'Texto anterior.\nQUESTÃO 7. Qual a conduta?'
+    expect(dropCutoffTail(full)).toBe(full)
+  })
+})
+
+describe('recoverPopqGrids', () => {
+  it('linha de valores + linha de rótulos (como o modelo devolve às vezes)', () => {
+    const t = 'QUESTÃO 2\n\n+1\nAa\n+2\nBa\n-7\nC\n\n5,5\n2,0\n9\nHG\nCP\nCVT\n\n-1\n-2\n-8\nAp\nBp\nD\n\nQUESTÃO 3\n-2 Aa - 2 Ba - 6 C 3,5 HG 2,5 CP 7 CVT +1 Ap +4 Bp - 6 D'
+    expect(recoverPopqGrids(t)).toBe(
+      'QUESTÃO 2\n\nPOP-Q — Aa +1; Ba +2; C -7; HG 5,5; CP 2,0; CVT 9; Ap -1; Bp -2; D -8\n\nQUESTÃO 3\nPOP-Q — Aa -2; Ba -2; C -6; HG 3,5; CP 2,5; CVT 7; Ap +1; Bp +4; D -6',
+    )
+  })
+  it('"rótulo valor" com separadores e traço de ponto ausente', () => {
+    expect(recoverPopqGrids('Quadro: Aa +2 | Ba +3 | C +1 | HG 5 | CP 3 | CVT 9 | Ap -2 | Bp -1 | D ---')).toBe('Quadro:\nPOP-Q — Aa +2; Ba +3; C +1; HG 5; CP 3; CVT 9; Ap -2; Bp -1; D —')
+  })
+  it('não mexe em linha já formatada nem em quadro incompleto/ambíguo', () => {
+    const ok = 'POP-Q — Aa -1; Ba +1; C -5; HG 3,5; CP 2,5; CVT 7; Ap -2; Bp 0; D -6'
+    expect(recoverPopqGrids(ok)).toBe(ok)
+    const partial = '4 3 8 HG CP CVT -1 +2 Ap Bp D Texto seguinte'
+    expect(recoverPopqGrids(partial)).toBe(partial)
+  })
+})
+
 describe('auxiliares', () => {
   it('imageIdsIn e fullTextWithImages', () => {
     expect(imageIdsIn('a [[imagem p1-1]] b [[imagem p2-3]] [[imagem p1-1]]')).toEqual(['p1-1', 'p2-3'])
     expect(fullTextWithImages([{ page: 1, text: 'A\n[[imagem p1-1]]' }], { 'p1-1': { page: 1, kind: 'figura', text: 'Foto' } })).toBe('\n[[página 1]]\nA\n[Imagem p. 1: Foto]')
+  })
+  it('missingImageBrackets acha o quadro que a IA omitiu (ignora espaços/quebras)', () => {
+    const src = 'Paciente de 70 anos…\n[Imagem p. 15: POP-Q — Aa +2; Ba +3]\n[Imagem p. 15: Foto da lesão]'
+    expect(missingImageBrackets(src, 'Paciente de 70 anos…\n[Imagem p. 15: Foto da  lesão]')).toEqual(['[Imagem p. 15: POP-Q — Aa +2; Ba +3]'])
   })
   it('imageDescriptionsIn lista as transcrições do trecho', () => {
     const t = 'x\n[Imagem p. 2: POP-Q — Aa 0]\n[Imagem p. 3]\n[Imagem p. 4 — texto da imagem:]\nQUESTÃO 1\n[Imagem p. 4 — fim]'
     expect(imageDescriptionsIn(t)).toEqual(['p. 2: POP-Q — Aa 0', 'p. 3: imagem não transcrita', 'p. 4: QUESTÃO 1'])
   })
   it('reflowTranscription recoloca as quebras que o segmentador usa', () => {
-    expect(reflowTranscription('d. Fim do item. QUESTÃO 4. Paula marque V ou F. ( ) Iniciei aos 16. ( ) Ouvi falar. a) Qual? b) Por quê? Resposta: sim')).toBe(
-      'd. Fim do item.\nQUESTÃO 4. Paula marque V ou F.\n( ) Iniciei aos 16.\n( ) Ouvi falar.\na) Qual?\nb) Por quê?\nResposta: sim',
+    expect(reflowTranscription('d. Fim do item. QUESTÃO 4. Ana marque V ou F. ( ) Primeira afirmativa. ( ) Segunda afirmativa. a) Qual? b) Por quê? Resposta: sim')).toBe(
+      'd. Fim do item.\nQUESTÃO 4. Ana marque V ou F.\n( ) Primeira afirmativa.\n( ) Segunda afirmativa.\na) Qual?\nb) Por quê?\nResposta: sim',
     )
+    expect(reflowTranscription('QUESTÃO 2. Observe: POP-Q — Aa -1; Ba 0; C -4; D -6 a. Qual o diagnóstico?')).toBe('QUESTÃO 2. Observe:\nPOP-Q — Aa -1; Ba 0; C -4; D -6\na. Qual o diagnóstico?')
   })
 })

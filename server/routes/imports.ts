@@ -192,7 +192,13 @@ export const importsRoutes = new Hono<AppEnv>()
       )
       const done = state.cursor === END
       await save(state, done ? 'revisao' : 'processando')
-      return c.json({ id: job.id, status: done ? 'revisao' : 'processando', node: state.cursor, history: state.history.slice(-5) })
+      return c.json({
+        id: job.id,
+        status: done ? 'revisao' : 'processando',
+        node: state.cursor,
+        history: state.history.slice(-5),
+        progress: { blocks: state.blocks?.length ?? 0, pendingBatches: state.pendingBatches?.length ?? 0 },
+      })
     } catch (err) {
       if (err instanceof HTTPException && err.status === 429) {
         await save(state) // mantém checkpoint; usuário retoma depois

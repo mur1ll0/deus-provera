@@ -201,6 +201,35 @@ export function segmentQuestions(fullText: string): SegmentedQuestion[] {
     pushBlock(m.index, end, m.label)
   }
   if (!marks.length) pushBlock(0, fullText.length)
+  return mergeRepeatedLabels(out)
+}
+
+/**
+ * Enunciado em FOTO + respostas digitadas com o mesmo rótulo logo depois (medido em `Unidade II.pdf`
+ * com a etapa de visão: "QUESTÃO 3. <caso clínico>…" vem da imagem e, em seguida, o texto do PDF repete
+ * "QUESTÃO 3" só com "a) … resposta"). O bloco sem enunciado é unido ao anterior de mesmo rótulo
+ * (até 3 blocos atrás, ±2 páginas) que ainda não tem nenhuma resposta. Sem imagens transcritas o padrão
+ * praticamente não ocorre (métricas de texto inalteradas — docs/10 §7).
+ */
+function mergeRepeatedLabels(qs: SegmentedQuestion[]): SegmentedQuestion[] {
+  const out: SegmentedQuestion[] = []
+  for (const q of qs) {
+    const noStem = q.stem.replace(/\s/g, '').length < 15
+    const target =
+      noStem && q.sourceLabel && q.items.some((i) => i.answer)
+        ? out
+            .slice(-3)
+            .reverse()
+            .find((p) => p.sourceLabel === q.sourceLabel && !p.items.some((i) => i.answer) && Math.abs((p.page ?? 0) - (q.page ?? 0)) <= 2)
+        : undefined
+    if (!target) {
+      out.push(q)
+      continue
+    }
+    const byLabel = new Map(target.items.filter((i) => i.label).map((i) => [i.label, i]))
+    const sameLabels = q.items.every((i) => i.label && byLabel.has(i.label))
+    target.items = sameLabels ? target.items.map((t) => ({ ...t, answer: q.items.find((i) => i.label === t.label)?.answer ?? t.answer })) : q.items
+  }
   return out
 }
 

@@ -213,7 +213,11 @@ export function resolveImageMarks(text: string, notes: Record<string, ImageNote 
     const body = (n.text ?? '').replace(/\[(?=Imagem)/gi, '(').trim()
     if (!body) return `[Imagem p. ${n.page}]`
     if (n.kind === 'texto') return `${imageTextOpen(n.page)}\n${body}\n${imageTextClose(n.page)}`
-    return `[Imagem p. ${n.page}: ${body.replace(/\]/g, ')').replace(/\s*\n\s*/g, ' / ')}]`
+    // Rótulo acima do quadro ("QUESTÃO 1" dentro da imagem) vira texto normal: o segmentador separa as questões
+    const grid = n.kind === 'pop_q' ? body.search(/POP-?Q\s*[—–-]/i) : -1
+    const label = grid > 0 ? `${body.slice(0, grid).trim()}\n` : ''
+    const content = grid > 0 ? body.slice(grid) : body
+    return `${label}[Imagem p. ${n.page}: ${content.replace(/\]/g, ')').replace(/\s*\n\s*/g, ' / ')}]`
   })
 }
 
@@ -224,12 +228,94 @@ export function resolveImageMarks(text: string, notes: Record<string, ImageNote 
 export function reflowTranscription(text: string): string {
   return text
     .replace(/\r\n?/g, '\n')
-    .replace(/[ \t]+(?=QUEST[ÃA]O\s*\d)/gi, '\n')
+    .replace(/([^\n])[ \t]*(?=QUEST[ÃA]O\s*\d)/gi, '$1\n')
+    // quadro POP-Q no meio do texto: linha própria (antes e depois do último ponto, "D <valor>")
+    .replace(/[ \t]+(?=POP-?Q\s*[—–])/gi, '\n')
+    .replace(/(POP-?Q\s*[—–][^\n]*?\bD\s*(?:[+\-−–]?\s*\d+(?:,\d+)?|—|NA))[ \t]+(?=\S)/gi, '$1\n')
     .replace(/[ \t]+(?=\(\s*[VF]?\s*\)\s)/g, '\n')
-    .replace(/([.?!:;])[ \t]+(?=[a-hA-H][.)]\s)/g, '$1\n')
+    .replace(/([.?!:;)])[ \t]*(?=[a-hA-H][.)]\s)/g, '$1\n')
     .replace(/([.?!:;])[ \t]+(?=(?:Resposta|Gabarito|R)\s*:)/g, '$1\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+/**
+ * Foto de página que mostra, na borda de baixo, só o começo da questão SEGUINTE (medido na
+ * `III UNIDADE.pdf`: "QUESTÃO 6. <começo do enunciado> ..."). Esse fragmento
+ * viraria uma questão parcial na revisão; a questão completa está em outra página/foto. Regra: trecho
+ * FINAL que começa em "QUESTÃO N", tem < 300 caracteres e termina em reticências → removido.
+ */
+export function dropCutoffTail(text: string): string {
+  const last = [...text.matchAll(/(^|\n)QUEST[ÃA]O\s*\d+/gi)].at(-1)
+  if (!last?.index) return text // sem rótulo, ou a foto inteira é a questão: nada a cortar
+  const tail = text.slice(last.index).trim()
+  return tail.length < 300 && tail.split('\n').length <= 4 && /(\.\.\.|…)\s*$/.test(tail) ? text.slice(0, last.index).trimEnd() : text
+}
+
+const POPQ_ORDER = ['Aa', 'Ba', 'C', 'HG', 'CP', 'CVT', 'Ap', 'Bp', 'D']
+const POPQ_ALIAS: Record<string, string> = { aa: 'Aa', ba: 'Ba', c: 'C', hg: 'HG', gh: 'HG', cp: 'CP', pb: 'CP', cvt: 'CVT', tvl: 'CVT', ap: 'Ap', bp: 'Bp', d: 'D' }
+const isPopqLine = (l: string) => /POP-?Q\s*[—–-]/i.test(l)
+
+/**
+ * Recupera quadros POP-Q que o modelo devolveu "achatados" (medido no nemotron-VL: "+2 Aa +1 Ba -5 C",
+ * "3,5 2,0 8 HG CP CVT", "Aa +2; Ba +1"…). Numa sequência só de números, traços e rótulos POP-Q, se os 9
+ * rótulos aparecem na ordem canônica e há 9 valores, o k-ésimo valor pertence ao k-ésimo rótulo — vale
+ * para "valor rótulo", "rótulo valor" e "linha de valores + linha de rótulos". O trecho vira
+ * `POP-Q — Aa <v>; …; D <v>`. Linhas já nesse formato e sequências ambíguas ficam como estão.
+ */
+export function recoverPopqGrids(text: string): string {
+  const lines = text.split('\n')
+  const out: string[] = []
+  let chunk: string[] = []
+  const flush = () => {
+    if (chunk.length) out.push(recoverInChunk(chunk.join('\n')))
+    chunk = []
+  }
+  for (const l of lines) {
+    if (isPopqLine(l)) {
+      flush()
+      out.push(l)
+    } else chunk.push(l)
+  }
+  flush()
+  return out.join('\n')
+}
+
+function recoverInChunk(text: string): string {
+  // tokens: "QUESTÃO 2" (inteiro, não é valor), número com sinal, traço de ponto ausente, palavra, separador, outro
+  const re = /QUEST[ÃA]O\s*\d+|[+\-−–]?[ \t]*\d+(?:[.,]\d+)?|—|-{2,3}|[A-Za-zÀ-ÿ]+|[;:|,/]|\S/g
+  type Tok = { s: string; i: number; kind: 'num' | 'label' | 'sep' | 'other' }
+  const toks: Tok[] = []
+  for (const m of text.matchAll(re)) {
+    const s = m[0]
+    const kind = /^QUEST/i.test(s) ? 'other' : /^([+\-−–]?[ \t]*\d|—|-{2,3}$)/.test(s) ? 'num' : POPQ_ALIAS[s.toLowerCase()] ? 'label' : /^[;:|,/]$/.test(s) ? 'sep' : 'other'
+    toks.push({ s, i: m.index ?? 0, kind })
+  }
+  const edits: { from: number; to: number; text: string }[] = []
+  let k = 0
+  while (k < toks.length) {
+    if (toks[k].kind === 'other' || toks[k].kind === 'sep') {
+      k++
+      continue
+    }
+    let e = k
+    while (e + 1 < toks.length && toks[e + 1].kind !== 'other') e++
+    const run = toks.slice(k, e + 1)
+    const labels = run.filter((t) => t.kind === 'label').map((t) => POPQ_ALIAS[t.s.toLowerCase()])
+    const values = run.filter((t) => t.kind === 'num').map((t) => t.s.replace(/[ \t]+/g, '').replace(/^[−–]/, '-').replace(/^-{2,3}$/, '—'))
+    if (labels.join() === POPQ_ORDER.join() && values.length === 9) {
+      const last = run[run.length - 1]
+      edits.push({ from: run[0].i, to: last.i + last.s.length, text: `POP-Q — ${POPQ_ORDER.map((p, j) => `${p} ${values[j]}`).join('; ')}` })
+    }
+    k = e + 1
+  }
+  let res = text
+  for (const ed of edits.reverse()) {
+    const before = res.slice(0, ed.from).replace(/[ \t]+$/, '')
+    const after = res.slice(ed.to).replace(/^[ \t]+/, '')
+    res = `${before}${before && !before.endsWith('\n') ? '\n' : ''}${ed.text}${after && !after.startsWith('\n') ? '\n' : ''}${after}`
+  }
+  return res.replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '')
 }
 
 /** Ids dos marcadores presentes num texto (ordem de aparição, sem repetição). */
@@ -240,6 +326,17 @@ export function imageIdsIn(text: string): string[] {
 /** Texto completo para o segmentador: `[[página N]]` + texto da página com as imagens resolvidas. */
 export function fullTextWithImages(pages: { page: number; text: string }[], notes: Record<string, ImageNote | undefined> = {}): string {
   return pages.map((p) => `\n[[página ${p.page}]]\n${resolveImageMarks(p.text, notes)}`).join('\n')
+}
+
+/**
+ * Colchetes `[Imagem p. N: …]` (quadro/figura/tabela) do texto de origem que NÃO aparecem no texto devolvido
+ * pela IA de estruturação — medido: o modelo às vezes omite o quadro POP-Q que estava na página seguinte.
+ * O nó `structure` reanexa esses colchetes ao enunciado (dado de imagem nunca se perde).
+ */
+export function missingImageBrackets(source: string, output: string): string[] {
+  const squash = (s: string) => s.replace(/\s+/g, ' ').trim()
+  const out = squash(output)
+  return [...source.matchAll(/\[Imagem p\. \d+: [^\]]*\]/g)].map((m) => squash(m[0])).filter((b) => !out.includes(b))
 }
 
 /** Transcrições (não decorativas) presentes num trecho já resolvido — vira `descricao_imagem` da questão. */

@@ -112,7 +112,7 @@ Corpo: vazio.
 
 | Código | Quando | Corpo |
 |---|---|---|
-| 200 | Avançou ou terminou | `{ "id", "status": "processando" \| "revisao", "node": "<próximo nó>", "history": [{ "node", "ok", "ms", "note?" }] }` (últimos 5) |
+| 200 | Avançou ou terminou | `{ "id", "status": "processando" \| "revisao", "node": "<próximo nó>", "history": [{ "node", "ok", "ms", "note?" }], "progress": { "blocks", "pendingBatches" } }` (history: últimos 5) |
 | 200 | Job não está em `processando` | `{ "id", "status" }` (nada é executado) |
 | 401 | Sem sessão | |
 | 404 | Job inexistente ou de outro usuário | |
@@ -123,23 +123,16 @@ Falhas de **modelo** (rate limit do OpenRouter, JSON inválido, grounding reprov
 
 **Idempotência e concorrência**: chamar `/run` de novo continua do último checkpoint, e nós concluídos não são refeitos. Duas chamadas **simultâneas** ao mesmo job poderiam processar o mesmo lote duas vezes. A implementação DEVE adotar uma *lease*: `UPDATE … SET run_lease_until = now() + 270s WHERE id = $1 AND (run_lease_until IS NULL OR run_lease_until < now())`. Se nenhuma linha for afetada, responder **409** `{ "error": "Processamento já em andamento." }`. **Planejado; hoje não há lease.**
 
-### Loop do cliente
+### Fluxo do cliente (implementado)
 
-```ts
-// src/features/import/useImportJob.ts (a criar)
-async function drive(jobId: string, onProgress: (s: RunResponse) => void) {
-  for (;;) {
-    const res = await api.post<RunResponse>(`/api/imports/${jobId}/run`) // ~até 240 s por chamada
-    onProgress(res)
-    if (res.status === 'revisao') return api.get<ImportJobView>(`/api/imports/${jobId}`)
-    if (res.status !== 'processando') throw new Error('Importação interrompida')
-    // sem espera: o servidor já respeita 20 req/min via breaker/rate-limit dos modelos
-  }
-}
-// 429 → mostrar aviso de cota + sugerir agente externo; guardar jobId para retomar.
-// 409 → outra aba está processando: passar a acompanhar via GET /api/imports/:id.
-// Rede caiu → repetir /run (seguro: retoma do checkpoint).
-```
+`src/features/import/importJob.ts` (sem React; testado de ponta a ponta contra a rota real em `src/features/import/__tests__/importJob.test.ts`) e o hook `useImportJob.ts`:
+
+1. `POST /api/imports` com `pdfJobPayload(pdf, { vision })` → guarda o id no navegador (`localStorage`) para retomar.
+2. Visão (se marcada e houver imagens): `renderPageImages()` → `uploadPageImages()` em lotes ≤ 3; `retry: true` volta sozinha no fim da fila; **429 aqui não para o fluxo** (as imagens restantes viram `[Imagem p. N]`).
+3. `POST /:id/run` em loop até `revisao` (máx. 60 chamadas). Enquanto cada `/run` roda (até ~240 s), `GET /:id` a cada 4 s atualiza o nó e os lotes restantes na tela.
+4. `GET /:id` → `draftsFromServerJob()` → tela de revisão.
+
+Erros: 429 → "Importação pausada" com **Tentar continuar** (mesmo job, do checkpoint) e **Usar meu agente de IA**; rede/servidor → **Tentar continuar**; sair da tela interrompe só o acompanhamento — ao voltar, um aviso oferece **Continuar** o job salvo. Na retomada não há PDF, então imagens ainda não enviadas viram `[Imagem p. N]`. *(Planejado: 409 de lease → acompanhar via GET.)*
 
 ---
 
