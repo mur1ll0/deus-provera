@@ -1,13 +1,13 @@
 import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import clsx from 'clsx'
-import { AlertTriangle, FolderPlus, GripVertical, Layers, ListChecks, Pencil, Sparkles, Trash2 } from 'lucide-react'
+import { AlertTriangle, BookOpen, FolderPlus, GripVertical, Layers, ListChecks, Pencil, Sparkles, Trash2 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Badge, Button, Card, DemoTag, Field, inputClass, Modal } from '@/components/ui'
 import { useDistractors } from '@/lib/ai'
 import { uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
 import { QuestionEditor } from '@/features/questions/QuestionEditor'
 import type { ReviewProblem } from './commit'
-import type { ReviewState } from './drafts'
+import type { ReviewNotes, ReviewState } from './drafts'
 
 /**
  * Tela de revisão pós-processamento: cards por Área › Disciplina · Assunto.
@@ -134,7 +134,7 @@ export function ReviewBoard({
     <div className="space-y-5">
       {/* Barra de resumo */}
       <Card className="flex flex-wrap items-center gap-4 p-4">
-        <div className="flex flex-wrap gap-2 text-sm">
+        <div className="flex min-w-0 flex-wrap gap-2 text-sm">
           <Badge tone="brand">{total} {total === 1 ? 'questão' : 'questões'}</Badge>
           <Badge tone="neutral">{cards.length} {cards.length === 1 ? 'card' : 'cards'}</Badge>
           {flagged > 0 && (
@@ -142,7 +142,13 @@ export function ReviewBoard({
               <AlertTriangle size={12} /> {flagged} para revisar
             </Badge>
           )}
-          {state.fileName && <Badge tone="blue">{state.fileName}</Badge>}
+          {state.fileName && (
+            <Badge tone="blue" className="max-w-full min-w-0">
+              <span className="truncate" title={state.fileName}>
+                {state.fileName}
+              </span>
+            </Badge>
+          )}
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
           {perguntasSemAlt > 0 && (
@@ -160,6 +166,8 @@ export function ReviewBoard({
           </Button>
         </div>
       </Card>
+
+      {state.notes && <DocumentNotes notes={state.notes} />}
 
       {bulkError && (
         <p role="alert" className="text-sm text-rose-600">
@@ -265,7 +273,7 @@ export function ReviewBoard({
 function DropCard({ card, children, onEdit, onRemove }: { card: ImportCard; children: ReactNode; onEdit: () => void; onRemove?: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: card.id })
   return (
-    <div ref={setNodeRef} className={clsx('card flex flex-col p-4 transition', isOver && 'border-brand-400 ring-4 ring-brand-100')}>
+    <div ref={setNodeRef} className={clsx('card flex min-w-0 flex-col p-4 transition', isOver && 'border-brand-400 ring-4 ring-brand-100')}>
       <div className="mb-3 flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-bold uppercase tracking-wide text-brand-600">
@@ -329,6 +337,67 @@ function DraggableQuestion({
           </button>
         </div>
       </QuestionChip>
+    </div>
+  )
+}
+
+/** Guia do documento (instruções e temas por questão usados na classificação) + avisos do processamento. */
+function DocumentNotes({ notes }: { notes: ReviewNotes }) {
+  const { guide, warnings } = notes
+  const quota = warnings.filter((w) => /cota/i.test(w))
+  const others = warnings.filter((w) => !/cota/i.test(w))
+  const hasGuide = !!guide && (guide.topics.length > 0 || !!guide.instructions)
+  if (!hasGuide && !warnings.length) return null
+  return (
+    <div className="space-y-3">
+      {quota.length > 0 && (
+        <section role="status" className="rounded-2xl border border-gold-300 bg-gold-50 p-4 text-sm">
+          <p className="flex items-center gap-2 font-bold text-gold-600">
+            <AlertTriangle size={16} /> A cota diária de IA acabou durante a importação
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-700">
+            {quota.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted">
+            A cota renova amanhã. Para não esperar, use o método <b>“Usar meu agente de IA”</b> na importação: ele não usa a cota do sistema.
+          </p>
+        </section>
+      )}
+      {hasGuide && guide && (
+        <details className="card p-4 text-sm">
+          <summary className="flex cursor-pointer flex-wrap items-center gap-2 font-bold">
+            <BookOpen size={16} className="text-brand-600" /> Guia do documento{guide.page ? ` (pág. ${guide.page})` : ''}
+            {guide.topics.length > 0 && <Badge tone="brand">{guide.topics.length} temas por questão</Badge>}
+            {guide.instructions && <Badge tone="neutral">instruções</Badge>}
+          </summary>
+          {guide.instructions && <p className="mt-3 whitespace-pre-line break-words text-slate-700">{guide.instructions}</p>}
+          {guide.topics.length > 0 && (
+            <ul className="mt-3 space-y-1">
+              {guide.topics.map((t) => (
+                <li key={t.source} className="flex gap-2 break-words">
+                  <span className="shrink-0 font-mono text-xs text-muted">{t.source}</span>
+                  <span>{t.assunto}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-xs text-muted">As questões listadas foram agrupadas pelos temas que o próprio documento indica. Confira e ajuste os cards se precisar.</p>
+        </details>
+      )}
+      {others.length > 0 && (
+        <details className="card p-4 text-sm">
+          <summary className="cursor-pointer font-bold">Avisos do processamento ({others.length})</summary>
+          <ul className="mt-2 list-disc space-y-0.5 pl-5 text-slate-700">
+            {others.map((w) => (
+              <li key={w} className="break-words">
+                {w}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   )
 }

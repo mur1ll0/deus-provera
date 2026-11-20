@@ -1,3 +1,4 @@
+import type { DocumentGuide } from '@shared/document-guide'
 import type { ImportFile, ImportQuestion } from '@shared/schemas/import'
 import { apiFetch } from '@/lib/api'
 import type { PageImageCrop } from './pageImages'
@@ -44,6 +45,8 @@ export interface ImportJobView {
   warnings: string[]
   cards?: ServerCard[]
   drafts?: Record<string, ServerDraft>
+  /** Guia do documento (instruções, temas por questão) lido no servidor — só em `revisao`. */
+  guide?: DocumentGuide
   /** Job de agente externo: o JSON v2 validado (a revisão é montada no cliente). */
   payload?: ImportFile | null
   /** Revisão salva automaticamente (T042): cards + rascunhos já editados. */

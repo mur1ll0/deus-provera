@@ -168,7 +168,11 @@ function parseBlock(body: string): { stem: string; items: SegmentedItem[] } {
   return { stem: reflow(prompt), items: [{ prompt: '', answer: answer && reflow(answer) }] }
 }
 
-export function segmentQuestions(fullText: string): SegmentedQuestion[] {
+/**
+ * @param opts.skipPreamble texto antes da 1ª questão é capa/instruções/legenda (guia do documento,
+ *   shared/document-guide.ts) — não vira questão, mesmo sendo longo.
+ */
+export function segmentQuestions(fullText: string, opts: { skipPreamble?: boolean } = {}): SegmentedQuestion[] {
   const marks = findMarks(fullText)
   const out: SegmentedQuestion[] = []
   let section: string | undefined
@@ -184,7 +188,7 @@ export function segmentQuestions(fullText: string): SegmentedQuestion[] {
   }
 
   // Texto antes da primeira marca (ex.: comando comum de uma seção) só vira questão se for longo
-  if (marks.length && tidy(fullText.slice(0, marks[0].index)).length > 400) pushBlock(0, marks[0].index)
+  if (marks.length && !opts.skipPreamble && tidy(fullText.slice(0, marks[0].index)).length > 400) pushBlock(0, marks[0].index)
 
   for (let i = 0; i < marks.length; i++) {
     const m = marks[i]

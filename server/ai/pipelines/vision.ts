@@ -1,6 +1,6 @@
 import { inspectText } from '../../../shared/guardrails'
 import { dropCutoffTail, recoverPopqGrids, reflowTranscription, type ImageKind } from '../../../shared/page-images'
-import { AiUnavailableError, callStructured, type AttemptLog } from '../client'
+import { AiQuotaExhaustedError, AiUnavailableError, callStructured, type AttemptLog } from '../client'
 import { VISION_SYSTEM } from '../prompts'
 import { visionSchema, type VisionBatch } from '../schemas'
 
@@ -128,6 +128,8 @@ export async function describeImageBatch(batch: PageImageInput[], opts: Describe
     })
     return { results, warnings }
   } catch (err) {
+    // Cota do dia esgotada: sobe (429 na rota) — o cliente segue sem visão em vez de reenviar recortes à toa
+    if (err instanceof AiQuotaExhaustedError) throw err
     if (err instanceof AiUnavailableError) return failed('nenhum modelo de visão respondeu')
     throw err
   }

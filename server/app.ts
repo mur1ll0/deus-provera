@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { AiQuotaExhaustedError } from './ai/client'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 import { setAiRecorder } from './ai/client'
@@ -56,6 +57,8 @@ app.route('/ai', aiRoutes)
 
 app.onError((err, c) => {
   if (err instanceof HTTPException) return c.json({ error: err.message || 'Erro' }, err.status)
+  // Cota diária de IA gratuita esgotada no OpenRouter: 429 com a sugestão do agente próprio (FR-021)
+  if (err instanceof AiQuotaExhaustedError) return c.json({ error: err.message, quota: true }, 429)
   console.error(err)
   return c.json({ error: 'Erro interno' }, 500)
 })

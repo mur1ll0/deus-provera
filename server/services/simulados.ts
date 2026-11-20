@@ -6,7 +6,7 @@ import type { z } from 'zod'
 import type { answerInput, AnswerView, AttemptView, GradeResult, HistoryItem, ItemKey, PreviewView, progressInput, PublicQuestion, ResultView, RevealResult, ScoreDetail } from '../../shared/schemas/simulado'
 import { scoreSimulado } from '../../shared/scoring'
 import { autoTimeLimitMin, isEligible, presentAs } from '../../shared/simulado'
-import { AiUnavailableError } from '../ai/client'
+import { AiQuotaExhaustedError, AiUnavailableError } from '../ai/client'
 import { explainQuestion, gradeDiscursive, hintFor, type QuestionForAi } from '../ai/services'
 import { db, schema } from '../db/client'
 import { reserveAiRequest } from '../middleware'
@@ -537,7 +537,10 @@ async function aiInputOf(a: AttemptRow, itemId: string) {
   return { item, kind, questionId, input, stem: `${q.stem}\n${item.prompt}`.trim() }
 }
 
-const aiUnavailable = (fallback: string) => new HTTPException(503, { message: `IA indisponível agora. ${fallback}` })
+const aiUnavailable = (fallback: string, err?: unknown) =>
+  err instanceof AiQuotaExhaustedError
+    ? new HTTPException(429, { message: `A cota diária de IA gratuita acabou (renova amanhã). ${fallback}` })
+    : new HTTPException(503, { message: `IA indisponível agora. ${fallback}` })
 
 /** Dica antes de responder (T030): só treino com dicas ligadas e pergunta ainda não revelada; vale metade. */
 export async function hintForItem(userId: string, id: string, itemId: string): Promise<{ hint: string }> {
@@ -556,7 +559,7 @@ export async function hintForItem(userId: string, id: string, itemId: string): P
   try {
     hint = (await hintFor(input, userId)).hint
   } catch (err) {
-    if (err instanceof AiUnavailableError) throw aiUnavailable('Tente de novo em instantes.')
+    if (err instanceof AiUnavailableError) throw aiUnavailable('Tente de novo em instantes.', err)
     throw err
   }
   await db()
@@ -591,7 +594,7 @@ export async function explainItem(userId: string, id: string, itemId: string): P
     const e = await explainQuestion(input, userId)
     return { hint: e.dica, perAlternative: e.por_alternativa.map((p) => ({ id: p.id, verdict: p.veredito, why: p.porque })), summary: e.resumo, cached: e.cached }
   } catch (err) {
-    if (err instanceof AiUnavailableError) throw aiUnavailable('Veja o comentário do autor nas alternativas.')
+    if (err instanceof AiUnavailableError) throw aiUnavailable('Veja o comentário do autor nas alternativas.', err)
     throw err
   }
 }
@@ -630,7 +633,7 @@ export async function aiGradeItem(userId: string, id: string, itemId: string): P
   try {
     g = await gradeDiscursive({ stem, expectedAnswer: item.expectedAnswer, keyPoints: item.keyPoints ?? [], answer: row.text }, userId)
   } catch (err) {
-    if (err instanceof AiUnavailableError) throw aiUnavailable('Use a autocorreção pelos pontos de acerto.')
+    if (err instanceof AiUnavailableError) throw aiUnavailable('Use a autocorreção pelos pontos de acerto.', err)
     throw err
   }
   const score = Math.min(1, Math.max(0, Math.round(g.nota * 100) / 100))

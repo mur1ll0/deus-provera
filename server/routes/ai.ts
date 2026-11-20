@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { inspectText } from '../../shared/guardrails'
-import { AiUnavailableError } from '../ai/client'
+import { AiQuotaExhaustedError, AiUnavailableError } from '../ai/client'
 import { generateDistractors } from '../ai/services'
 import { requireUser, reserveAiRequest, type AppEnv } from '../middleware'
 
@@ -43,6 +43,7 @@ export const aiRoutes = new Hono<AppEnv>()
       try {
         return c.json({ items: await generateDistractors(c.req.valid('json').items, user.id) })
       } catch (err) {
+        if (err instanceof AiQuotaExhaustedError) throw new HTTPException(429, { message: `${err.message} Você também pode escrever as alternativas no editor.` })
         if (err instanceof AiUnavailableError) throw new HTTPException(503, { message: 'IA indisponível agora. Escreva as alternativas ou tente de novo em instantes.' })
         throw err
       }

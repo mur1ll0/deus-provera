@@ -12,6 +12,7 @@ import { END } from '../ai/graph'
 import { db, schema } from '../db/client'
 import { requireUser, reserveAiRequest, type AppEnv } from '../middleware'
 import { commitImport } from '../services/import-commit'
+import { AiQuotaExhaustedError } from '../ai/client'
 import { loadTaxonomyForPrompt } from '../services/taxonomy'
 
 /**
@@ -212,7 +213,14 @@ export const importsRoutes = new Hono<AppEnv>()
             aiRequests++
           },
         },
-        { deadline, onCheckpoint: (s) => save(s).then(() => undefined) },
+        {
+          deadline,
+          // guarda o último checkpoint: num 429 no meio do passo, é ele que fica salvo (não o estado de antes do /run)
+          onCheckpoint: (s) => {
+            state = s
+            return save(s).then(() => undefined)
+          },
+        },
       )
       const done = state.cursor === END
       await save(state, done ? 'revisao' : 'processando')
@@ -227,6 +235,11 @@ export const importsRoutes = new Hono<AppEnv>()
       if (err instanceof HTTPException && err.status === 429) {
         await save(state) // mantém checkpoint; usuário retoma depois
         throw err
+      }
+      // Cota diária de IA gratuita esgotada no OpenRouter: pausa (checkpoint), retoma amanhã ou usa o agente próprio
+      if (err instanceof AiQuotaExhaustedError) {
+        await save(state)
+        throw new HTTPException(429, { message: err.message })
       }
       await save(state, 'falhou', String((err as Error).message))
       throw new HTTPException(500, { message: 'Falha no processamento. Seu progresso foi salvo.' })
@@ -249,6 +262,8 @@ export const importsRoutes = new Hono<AppEnv>()
       },
       warnings: s.warnings ?? [],
       cards: job.status === 'revisao' ? s.cards : undefined,
+      /** O que o documento diz sobre a organização (instruções, temas por questão) — exibido na revisão. */
+      guide: job.status === 'revisao' ? s.guide : undefined,
       drafts: job.status === 'revisao' ? s.drafts : undefined,
       payload: (job.state as { payload?: unknown }).payload,
       reviewDraft: job.status === 'revisao' ? (job.state as { reviewDraft?: unknown }).reviewDraft : undefined,

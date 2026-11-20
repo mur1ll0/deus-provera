@@ -1,3 +1,4 @@
+import type { DocumentGuide } from '@shared/document-guide'
 import type { QuestionItem, Visibility } from '@shared/domain'
 import { inspectText } from '@shared/guardrails'
 import { cleanItemLabel, type ImportFile, type ImportQuestion } from '@shared/schemas/import'
@@ -15,6 +16,21 @@ export interface ReviewState {
   jobId?: string
   /** JSON v2 do agente externo (revalidado no servidor ao criar o job — T023). */
   payload?: ImportFile
+  /** Guia do documento (instruções, temas por questão) e avisos do processamento, exibidos na revisão. */
+  notes?: ReviewNotes
+}
+
+export interface ReviewNotes {
+  guide?: DocumentGuide
+  /** Avisos do pipeline, sem repetição ("… (8×)"). */
+  warnings: string[]
+}
+
+/** Avisos repetidos (um por lote) viram uma linha com a contagem. */
+export function summarizeWarnings(warnings: string[] = []): string[] {
+  const count = new Map<string, number>()
+  for (const w of warnings) count.set(w, (count.get(w) ?? 0) + 1)
+  return [...count].map(([w, n]) => (n > 1 ? `${w} (${n}×)` : w))
 }
 
 /** Aplica o guardrail em um campo e acumula as sinalizações. */
@@ -122,7 +138,11 @@ export function draftsFromImportFile(file: ImportFile, visibility: Visibility): 
  * Mantém os cards e descrições da IA, as sinalizações do pipeline ("Processado sem IA — revise", visão…)
  * e manda para "Revisar categoria" qualquer questão que nenhum card tenha citado.
  */
-export function draftsFromServerJob(view: { cards?: ServerCard[]; drafts?: Record<string, ServerDraft> }, visibility: Visibility, fileName?: string): ReviewState {
+export function draftsFromServerJob(
+  view: { cards?: ServerCard[]; drafts?: Record<string, ServerDraft>; guide?: DocumentGuide; warnings?: string[] },
+  visibility: Visibility,
+  fileName?: string,
+): ReviewState {
   const drafts: Record<string, DraftQuestion> = {}
   const idMap = new Map<string, string>()
   for (const [serverId, q] of Object.entries(view.drafts ?? {})) {
@@ -141,7 +161,9 @@ export function draftsFromServerJob(view: { cards?: ServerCard[]; drafts?: Recor
     .filter((c) => c.questionIds.length)
   const orphans = Object.keys(drafts).filter((id) => !placed.has(id))
   if (orphans.length) cards.push({ id: uid('card'), area: 'Sem área', discipline: 'Sem disciplina', topic: 'Revisar categoria', description: '', questionIds: orphans })
-  return { cards: describeCards(cards, drafts), drafts, source: 'pdf_ia', fileName }
+  const warnings = summarizeWarnings(view.warnings)
+  const notes = view.guide || warnings.length ? { guide: view.guide, warnings } : undefined
+  return { cards: describeCards(cards, drafts), drafts, source: 'pdf_ia', fileName, ...(notes ? { notes } : {}) }
 }
 
 /** Resumo automático do card (no produto: gerado pela IA na etapa de categorização). */

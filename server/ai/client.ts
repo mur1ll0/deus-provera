@@ -50,6 +50,20 @@ export class AiGuardrailBlockedError extends AiUnavailableError {
 }
 
 /**
+ * Cota DIÁRIA de modelos gratuitos da chave esgotada no OpenRouter (HTTP 429 "free-models-per-day…"; 50 ou
+ * 1000 requisições/dia — docs/11). Vale para todos os modelos `:free` da chave até a virada do dia (UTC):
+ * trocar de modelo não adianta. Subclasse de AiUnavailableError (quem só quer um fallback continua
+ * funcionando); a importação PAUSA com checkpoint e sugere o agente de IA próprio (FR-021).
+ */
+export class AiQuotaExhaustedError extends AiUnavailableError {
+  readonly quota = true
+  constructor(task: AiTask, attempts: AttemptLog[]) {
+    super(task, attempts)
+    this.message = 'A cota diária de IA gratuita acabou. Ela renova amanhã — ou use o seu próprio agente de IA (ChatGPT, Claude, Gemini…), que não usa a cota do sistema.'
+  }
+}
+
+/**
  * Erro de CONFIGURAÇÃO/CONTA (chave inválida, sem saldo): trocar de modelo não resolve,
  * então a cadeia de fallback é interrompida e a mensagem orienta o que fazer.
  */
@@ -70,7 +84,7 @@ export class AiConfigError extends Error {
 export interface AttemptLog {
   model: string
   ok: boolean
-  errorKind?: 'rate_limit' | 'timeout' | 'invalid_output' | 'quality' | 'provider' | 'circuit_open' | 'not_found' | 'auth' | 'credits' | 'blocked'
+  errorKind?: 'quota' | 'rate_limit' | 'timeout' | 'invalid_output' | 'quality' | 'provider' | 'circuit_open' | 'not_found' | 'auth' | 'credits' | 'blocked'
   /** Status HTTP devolvido pelo OpenRouter, quando houver. */
   status?: number
   /** Mensagem resumida do erro (sem dados do usuário). */
@@ -135,6 +149,8 @@ export function classify(err: unknown): { kind: NonNullable<AttemptLog['errorKin
   if (status === 401 || status === 403) return { kind: 'auth', status }
   if (status === 402) return { kind: 'credits', status }
   if (status === 404) return { kind: 'not_found', status } // modelo saiu do ar / slug inválido
+  // 429 por cota DIÁRIA ("Rate limit exceeded: free-models-per-day[-high-balance]") ≠ limite por minuto
+  if ((status === 429 || text.includes('rate limit')) && /per-day|per day|daily/.test(text)) return { kind: 'quota', status }
   if (status === 429) return { kind: 'rate_limit', status }
   const msg = String((err as Error)?.message ?? err).toLowerCase()
   if (msg.includes('429') || msg.includes('rate limit')) return { kind: 'rate_limit', status }
@@ -230,6 +246,11 @@ export async function callStructured<T>(call: StructuredCall<T>): Promise<Struct
         if (kind === 'blocked') {
           await flush()
           throw new AiGuardrailBlockedError(call.task, attempts)
+        }
+        // Cota diária da chave esgotada: nenhum outro modelo gratuito vai responder hoje.
+        if (kind === 'quota') {
+          await flush()
+          throw new AiQuotaExhaustedError(call.task, attempts)
         }
         // Chave inválida ou sem saldo: nenhum outro modelo vai funcionar — para tudo com mensagem clara.
         if (kind === 'auth' || kind === 'credits') {

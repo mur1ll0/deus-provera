@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * concorrência real, ordem do documento preservada, fallback por lote e cota esgotada no meio do passo.
  */
 
-const h = vi.hoisted(() => ({ inFlight: 0, maxInFlight: 0, calls: 0, failBatchWith: null as string | null }))
+const h = vi.hoisted(() => ({ inFlight: 0, maxInFlight: 0, calls: 0, failBatchWith: null as string | null, quotaBatch: null as string | null }))
 
 vi.mock('../ai/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../ai/client')>()
@@ -21,6 +21,7 @@ vi.mock('../ai/client', async (importOriginal) => {
       await new Promise((r) => setTimeout(r, ids.includes('b1') ? 30 : 5))
       h.inFlight--
       if (h.failBatchWith && ids.includes(h.failBatchWith)) throw new real.AiUnavailableError('structure', [])
+      if (h.quotaBatch && ids.includes(h.quotaBatch)) throw new real.AiQuotaExhaustedError('structure', [])
       call.onAttempt?.({ task: 'structure', model: 'm:free', ok: true, latencyMs: 1 })
       return {
         value: {
@@ -66,6 +67,7 @@ const ctx = (reserve: () => Promise<void> = async () => {}) => ({ userId: 'u1', 
 beforeEach(() => {
   h.inFlight = h.maxInFlight = h.calls = 0
   h.failBatchWith = null
+  h.quotaBatch = null
 })
 
 describe('structure em paralelo', () => {
@@ -110,5 +112,11 @@ describe('structure em paralelo', () => {
     }
     await expect(importGraph.step(segmented(2), ctx(reserve))).rejects.toMatchObject({ status: 429 })
     expect(h.calls).toBe(0)
+  })
+
+  it('cota diária do OpenRouter esgotada: o passo PARA (sem rascunho "sem IA" em silêncio) para a rota pausar o job', async () => {
+    h.quotaBatch = 'b2'
+    const { AiQuotaExhaustedError } = await import('../ai/client')
+    await expect(importGraph.step(segmented(3), ctx())).rejects.toBeInstanceOf(AiQuotaExhaustedError)
   })
 })

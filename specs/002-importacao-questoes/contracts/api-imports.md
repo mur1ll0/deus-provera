@@ -116,6 +116,7 @@ Corpo: vazio.
 | 200 | Job não está em `processando` | `{ "id", "status" }` (nada é executado) |
 | 401 | Sem sessão | |
 | 404 | Job inexistente ou de outro usuário | |
+| 429 | Cota diária de modelos gratuitos do OpenRouter esgotada (`AiQuotaExhaustedError`) | `{ "error": "A cota diária de IA gratuita acabou. Ela renova amanhã — ou use o seu próprio agente de IA…" }`. Último checkpoint gravado; status continua `processando` (docs/05 §5.3) |
 | 429 | Orçamento de IA esgotado (global `AI_DAILY_BUDGET` ou por usuário `AI_USER_DAILY_LIMIT`) | `{ "error": "Cota diária de IA do sistema atingida. Tente amanhã ou use o modo \"agente externo\"." }`. Checkpoint mantido, status continua `processando` |
 | 500 | Erro não recuperável | `{ "error": "Falha no processamento. Seu progresso foi salvo." }`. Status vira `falhou` |
 
@@ -149,7 +150,9 @@ Erros: 429 → "Importação pausada" com **Tentar continuar** (mesmo job, do ch
   "status": "revisao",
   "node": "__end__",
   "progress": { "blocks": 141, "pendingBatches": 0, "images": { "ok": 44, "falhou": 2 } },
-  "warnings": ["Página 12: conteúdo suspeito removido (tentativa_de_instrucao)"],
+  "warnings": ["Página 12: conteúdo suspeito removido (tentativa_de_instrucao)", "Guia do documento encontrado na pág. 2: lista de temas por questão (12 temas) e instruções do material — usado na classificação."],
+  "guide": { "title": "…", "titleLines": ["…"], "explicit": {}, "instructions": "Cada questão apresenta…", "page": 2, "hasFrontMatter": true,
+             "topics": [{ "numbers": [1, 2, 3, 4], "assunto": "Incontinência urinária e prolapso", "source": "01-04" }] },
   "cards": [
     { "area": "Medicina", "disciplina": "Ginecologia", "assunto": "Prolapso genital", "descricao": "…", "questionIds": ["b1-1", "b2-2"] }
   ],
