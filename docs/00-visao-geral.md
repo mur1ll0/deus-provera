@@ -4,7 +4,7 @@
 
 **Deus Proverá** é um auxiliar de estudos para estudantes de Medicina e de outros cursos. O estudante transforma as próprias listas de questões respondidas (PDFs) em um **banco de questões** e treina com **simulados configuráveis**. O sistema mede o tempo por questão e por simulado, corrige, explica com IA e transforma o esforço em **pontos e ranking**.
 
-> "Estude como a prova cobra. O resto, Deus proverá."
+> "Faça a sua parte com fé. O resto, Deus proverá."
 
 ## Personas
 

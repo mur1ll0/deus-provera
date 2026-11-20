@@ -56,7 +56,7 @@ export function LoginPage() {
             <Logo />
           </div>
           <h1 className="mt-10 max-w-xl text-4xl font-extrabold leading-tight sm:text-5xl">
-            Estude como a prova cobra. <span className="text-gold-400">O resto, Deus proverá.</span>
+            Faça a sua parte com fé. <span className="text-gold-400">O resto, Deus proverá.</span>
           </h1>
           <p className="mt-4 max-w-lg text-brand-100">
             Simulados configuráveis, tempo por questão, correção comentada e um banco de questões alimentado por você e pela sua turma.

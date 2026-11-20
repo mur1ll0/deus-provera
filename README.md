@@ -1,6 +1,6 @@
 # Deus Proverá
 
-> Estude como a prova cobra. O resto, Deus proverá.
+> Faça a sua parte com fé. O resto, Deus proverá.
 
 Plataforma de estudos para Medicina e outros cursos. O estudante transforma as **próprias listas de questões em PDF** em um banco de questões e treina com **simulados configuráveis**: modo **prova** (aleatório, cronometrado, gabarito no fim, vale 3× mais pontos) ou **treino** (filtros por assunto, resposta a cada questão, dicas de IA). O sistema mede o tempo por questão e por simulado, corrige objetivas e discursivas, explica cada alternativa com IA (OpenRouter, modelos gratuitos) e mantém um **ranking** de estudantes.
 

@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { RankingPanel } from '@/components/RankingPanel'
 import { Badge, Button, Card, EmptyState, ProgressRing } from '@/components/ui'
 import { FullScreen } from '@/app/RequireAuth'
+import { blessingOfTheDay } from '@/lib/blessings'
 import { formatDate, pct } from '@/lib/format'
 import { useAuth } from '@/app/auth-context'
 import { useDashboardData } from './data'
@@ -17,6 +18,7 @@ export function DashboardPage() {
   const weakest = d.weakest
   const avgSec = d.avgSecPerQuestion
   const firstName = (profile?.displayName || user?.name || '').split(' ')[0]
+  const blessing = blessingOfTheDay()
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
@@ -26,8 +28,9 @@ export function DashboardPage() {
           <div className="pointer-events-none absolute -right-16 -top-16 size-64 rounded-full bg-brand-100/60 blur-2xl" />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div className="max-w-xl">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-600">Bom estudo{firstName ? `, ${firstName}` : ''}</p>
-              <h1 className="mt-2 text-3xl font-extrabold leading-tight sm:text-4xl">Estude como a prova cobra.</h1>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-600">Estudos abençoados{firstName ? `, ${firstName}` : ''}</p>
+              <h1 className="mt-2 text-3xl font-extrabold leading-tight sm:text-4xl">{blessing.text}</h1>
+              {blessing.ref && <p className="mt-1 text-sm font-bold text-gold-600">{blessing.ref}</p>}
               <p className="mt-3 text-sm leading-relaxed text-muted">
                 {weakest ? (
                   <>

@@ -9,7 +9,7 @@ export function Logo({ compact }: { compact?: boolean }) {
       {!compact && (
         <span className="leading-tight text-ink">
           <span className="block font-display text-[15px] font-extrabold">Deus Proverá</span>
-          <span className="block text-[11px] text-muted">Plataforma de estudos</span>
+          <span className="block text-[11px] text-muted">Estude com fé</span>
         </span>
       )}
     </div>

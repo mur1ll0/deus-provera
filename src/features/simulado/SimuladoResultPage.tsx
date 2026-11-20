@@ -168,7 +168,7 @@ function ResultBody({ data }: { data: ResultData }) {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         eyebrow={`Resultado · ${attempt.config.mode === 'prova' ? 'Prova' : 'Treino'}`}
-        title={score.accuracy >= 0.7 ? 'Mandou bem!' : score.accuracy >= 0.5 ? 'Bom caminho — revise os erros' : 'Hora de revisar'}
+        title={score.accuracy >= 0.7 ? 'Glória a Deus, mandou bem!' : score.accuracy >= 0.5 ? 'Bom caminho — siga firme e revise os erros' : 'Não desanime: revise com fé e tente de novo'}
         actions={
           <>
             <Button variant="secondary" onClick={() => void retryWrong()} disabled={correctItems === allItems.length}>
