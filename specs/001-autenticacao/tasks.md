@@ -10,7 +10,7 @@ Legenda: `[P]` = paralelizável (arquivos independentes) · `[x]` = concluída
 - [x] T002 Validação de variáveis de ambiente de auth (`server/env.ts`) e modelo em `.env.example`
 - [x] T003 `drizzle.config.ts` apontando para `server/db/schema.ts` (URL não-pooled para migrações)
 - [x] T004 Criar projeto no Google Cloud, tela de consentimento (escopos `openid email profile`) e credenciais OAuth com callbacks de produção e `http://localhost:3000/api/auth/callback/google` — callbacks local e `https://deus-provera.vercel.app/api/auth/callback/google` cadastrados (2026-11-20); o cliente OAuth é compartilhado (consentimento mostra "volley-mgm") — trocar por um cliente próprio antes de abrir para usuários
-- [ ] T005 Criar banco Neon pela integração Vercel Marketplace e configurar `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`/`GOOGLE_*` por ambiente na Vercel
+- [x] T005 Criar banco Neon pela integração Vercel Marketplace e configurar `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`/`GOOGLE_*` por ambiente na Vercel — feito em 2026-11-20 (auth em produção e preview; o Neon de produção é o mesmo do `.env` local)
 - [x] T006 [P] Documentar o dev local com API (`npm run dev:api`: Vite + Hono na mesma origem, porta 3000; `dev:full` = `vercel dev` opcional) e o checklist de auth em `README.md`
 
 ## Fase 2 — Fundação
@@ -63,9 +63,9 @@ Legenda: `[P]` = paralelizável (arquivos independentes) · `[x]` = concluída
 
 ## Definição de pronto
 
-> Verificado em 2026-11-20 (local, `npm run dev:api`): migração `0000_init` + seed aplicados no Neon; login Google real cria `user`, `account` (google), `session` e `profile`; pela tela, criar → editar → excluir questão persiste no Neon (conferido após recarregar); logout encerra a sessão (`/api/me` → `user: null`, `/api/questions` → 401, rota protegida → `/login?redirect=…`); desktop e 375 px sem rolagem horizontal. Corrigido no caminho: logout deixava a tela "logada" (`queryClient.clear()` removia a query `['me']` observada) e mensagem própria para `state_mismatch` (tela do Google aberta > 5 min). Pendentes: produção (T004/T005 — o cliente OAuth ainda não tem o callback de `deus-provera.vercel.app`) e os testes T021/T026/T033.
+> Verificado em 2026-11-20 (local, `npm run dev:api`): migração `0000_init` + seed aplicados no Neon; login Google real cria `user`, `account` (google), `session` e `profile`; pela tela, criar → editar → excluir questão persiste no Neon (conferido após recarregar); logout encerra a sessão (`/api/me` → `user: null`, `/api/questions` → 401, rota protegida → `/login?redirect=…`); desktop e 375 px sem rolagem horizontal. Corrigido no caminho: logout deixava a tela "logada" (`queryClient.clear()` removia a query `['me']` observada) e mensagem própria para `state_mismatch` (tela do Google aberta > 5 min). Produção (2026-11-20): variáveis de auth na Vercel, API empacotada (`npm run build:api`), login Google real em https://deus-provera.vercel.app com `/api/profile`, `/api/taxonomy`, `/api/questions` e `/api/ranking` respondendo 200.
 
-- [ ] Login Google funcionando em produção e em `localhost:3000` (local ✅ 2026-11-20; produção pendente)
+- [x] Login Google funcionando em produção e em `localhost:3000` (local e https://deus-provera.vercel.app ✅ 2026-11-20)
 - [x] `npm run check` verde (typecheck + lint + vitest), incluindo os testes T021, T025, T026, T033 (T021/T033 e SC-003 em `npm run test:db`, contra o Postgres)
 - [ ] SC-001 a SC-005 verificados e registrados no PR
 - [x] Nenhum dado de sessão no `localStorage`/`sessionStorage` (sessão só no cookie httpOnly; `localStorage` guarda apenas os dados do protótipo)
