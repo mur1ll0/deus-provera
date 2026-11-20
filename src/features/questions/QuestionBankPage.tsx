@@ -378,7 +378,7 @@ function ClassificationFields({
           list="disciplinas-da-area"
           value={value.discipline}
           maxLength={80}
-          placeholder="Ex.: Ginecologia"
+          placeholder="Ex.: Cardiologia"
           onChange={(e) => onChange({ ...value, discipline: e.target.value })}
         />
         <datalist id="disciplinas-da-area">

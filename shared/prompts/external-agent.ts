@@ -21,7 +21,7 @@ REGRAS
 3. Objetivas: liste as alternativas em "alternativas", marcando exatamente uma com "correta": true. Comentário/justificativa vai em "explicacao".
 4. Discursivas: resposta completa em "resposta_esperada" e de 3 a 6 "pontos_chave" curtos (o que um corretor exigiria), derivados da resposta.
 5. RECOMENDADO: para cada pergunta discursiva, gere também 5 alternativas em "alternativas" (1 correta = síntese fiel da resposta esperada; 4 incorretas plausíveis, de tamanho parecido, cada uma com "explicacao" de por que está errada), todas com "gerada_por_ia": true. Proibido "todas/nenhuma das anteriores".
-6. Classifique cada questão: "area" (ex.: Medicina, Matemática, Direito), "disciplina" (ex.: Ginecologia, Cálculo) e "assunto". O "assunto" deve ser AMPLO — o tema da aula/capítulo (ex.: "HPV e lesões precursoras", "Câncer de mama", "Prolapso genital"), NÃO o tema específico da pergunta — e IDÊNTICO (mesma grafia) para todas as questões do mesmo tema. Em "rotulo" coloque o rótulo original (ex.: "QUESTÃO 8").
+6. Classifique cada questão: "area" (ex.: Medicina, Matemática, Direito), "disciplina" (ex.: Cardiologia, Cálculo) e "assunto". O "assunto" deve ser AMPLO — o tema da aula/capítulo (ex.: "Hipertensão arterial", "Diabetes mellitus", "Derivadas"), NÃO o tema específico da pergunta — e IDÊNTICO (mesma grafia) para todas as questões do mesmo tema. Em "rotulo" coloque o rótulo original (ex.: "QUESTÃO 8").
 7. Se a questão depende de uma imagem (esquema, gráfico, tabela, foto), transcreva no enunciado os dados necessários, marque "tem_imagem": true e descreva a imagem em "descricao_imagem".
 8. "dificuldade": "facil", "media" ou "dificil" (sua estimativa). "pagina": página onde a questão começa.
 9. Ignore cabeçalhos, nomes de professores/alunos, rodapés e numeração de páginas.
@@ -38,28 +38,28 @@ Responda SOMENTE com um bloco \`\`\`json válido, sem comentários, seguindo exa
   "questoes": [
     {
       "area": "Medicina",
-      "disciplina": "Ginecologia",
-      "assunto": "HPV e lesões precursoras",
+      "disciplina": "Cardiologia",
+      "assunto": "Hipertensão arterial",
       "rotulo": "QUESTÃO 8",
-      "enunciado": "Joana tem 45 anos e menstrua regularmente. (…) A colpocitologia mostrou ASCUS. Responda:",
+      "enunciado": "Carlos tem 52 anos, é sedentário e assintomático. Em duas consultas, a pressão arterial foi de 150/95 mmHg. (…) Responda:",
       "perguntas": [
         {
           "rotulo": "a",
-          "texto": "A paciente apresenta um quadro clínico de patologia causada pelo HPV (…) há necessidade de solicitar algum outro exame? Justifique.",
+          "texto": "Qual é o diagnóstico mais provável? Há necessidade de algum exame para confirmá-lo? Justifique.",
           "tipo": "discursiva",
-          "resposta_esperada": "Sim, há necessidade de solicitar outro exame, principalmente o teste de DNA do HPV de alto risco (…)",
-          "pontos_chave": ["Solicitar teste de DNA-HPV de alto risco", "Transmissão não depende só de penetração", "Rastreamento a partir dos 30 anos avalia persistência"],
+          "resposta_esperada": "Hipertensão arterial estágio 1; recomenda-se confirmar com medidas fora do consultório, como MAPA ou MRPA (…)",
+          "pontos_chave": ["Hipertensão arterial estágio 1", "Confirmar com MAPA ou MRPA", "Excluir efeito do avental branco"],
           "alternativas": [
-            { "texto": "Sim: solicitar teste de DNA-HPV de alto risco, pois a transmissão não depende de penetração", "correta": true, "gerada_por_ia": true },
-            { "texto": "Não: sem penetração vaginal peniana não há risco de HPV", "correta": false, "gerada_por_ia": true, "explicacao": "O HPV é transmitido por contato pele a pele/mucosa." }
+            { "texto": "Hipertensão estágio 1; confirmar com MAPA ou MRPA antes de definir o tratamento", "correta": true, "gerada_por_ia": true },
+            { "texto": "Pressão normal; nenhuma conduta é necessária", "correta": false, "gerada_por_ia": true, "explicacao": "Valores ≥ 140/90 mmHg em mais de uma consulta são compatíveis com hipertensão." }
           ]
         },
         {
           "rotulo": "b",
-          "texto": "A parceira dela insistiu que ela fizesse uma colposcopia (…) o que significa este resultado? O que deve ser feito agora?",
+          "texto": "Quais medidas não farmacológicas devem ser orientadas?",
           "tipo": "discursiva",
-          "resposta_esperada": "O achado de epitélio acetobranco denso com borda bem delimitada é uma alteração de grau maior (…)",
-          "pontos_chave": ["Achado colposcópico de grau maior", "Sugere HSIL (NIC II/III)", "Realizar biópsia dirigida / ver e tratar"]
+          "resposta_esperada": "Redução do sal na dieta, atividade física regular, controle do peso e moderação no consumo de álcool (…)",
+          "pontos_chave": ["Reduzir sal", "Atividade física regular", "Controle do peso", "Moderar álcool"]
         }
       ],
       "dificuldade": "media",

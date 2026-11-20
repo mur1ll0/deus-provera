@@ -682,78 +682,78 @@ const SAMPLE_JSON = `\`\`\`json
 {
   "versao": "2.0",
   "origem": {
-    "arquivo": "III UNIDADE.pdf"
+    "arquivo": "lista-de-exercicios.pdf"
   },
   "questoes": [
     {
       "area": "Medicina",
-      "disciplina": "Ginecologia",
-      "assunto": "HPV e lesões precursoras",
+      "disciplina": "Cardiologia",
+      "assunto": "Hipertensão arterial",
       "rotulo": "QUESTÃO 1",
-      "enunciado": "Mulher de 22 anos, assintomática, veio para consulta de rotina. Sexarca aos 19 anos, parceiro único, nuligesta, em uso de ACO combinado. Citologia sugestiva de lesão intraepitelial de baixo grau. Exame físico normal. Responda:",
+      "enunciado": "Carlos tem 52 anos, é sedentário, assintomático e procurou a unidade de saúde para consulta de rotina. A pressão arterial foi de 150/95 mmHg em duas consultas, com intervalo de 15 dias. Exame físico sem outras alterações. Responda:",
       "perguntas": [
         {
           "rotulo": "a",
-          "texto": "Qual a melhor conduta?",
+          "texto": "Qual o diagnóstico mais provável e como confirmá-lo?",
           "tipo": "discursiva",
-          "resposta_esperada": "Até 24 anos, repetir a citologia em 3 anos; se normal, reiniciar o rastreamento aos 25 anos. Alterações mais graves: colposcopia.",
+          "resposta_esperada": "Hipertensão arterial estágio 1; confirmar com medidas fora do consultório (MAPA ou MRPA) para excluir o efeito do avental branco.",
           "pontos_chave": [
-            "Repetir citologia em 3 anos",
-            "Alta taxa de regressão da LSIL até 24 anos",
-            "Reiniciar rastreamento aos 25 anos"
+            "Hipertensão arterial estágio 1",
+            "Confirmar com MAPA ou MRPA",
+            "Excluir efeito do avental branco"
           ],
           "alternativas": [
             {
-              "texto": "Repetir a citologia em 3 anos e reiniciar o rastreamento aos 25",
+              "texto": "Hipertensão estágio 1; confirmar com MAPA ou MRPA",
               "correta": true,
               "gerada_por_ia": true
             },
             {
-              "texto": "Colposcopia imediata com biópsia",
+              "texto": "Pressão normal; nenhuma conduta",
               "correta": false,
               "gerada_por_ia": true,
-              "explicacao": "Indicada só se nova citologia vier pior."
+              "explicacao": "Valores ≥ 140/90 mmHg em mais de uma consulta são compatíveis com hipertensão."
             },
             {
-              "texto": "Exérese da zona de transformação",
+              "texto": "Hipertensão estágio 3; internar imediatamente",
               "correta": false,
               "gerada_por_ia": true,
-              "explicacao": "Sobretratamento para LSIL nessa idade."
+              "explicacao": "Estágio 3 exige PA ≥ 180/110 mmHg."
             },
             {
-              "texto": "Repetir a citologia em 6 meses",
+              "texto": "Crise hipertensiva; reduzir a pressão em minutos",
               "correta": false,
               "gerada_por_ia": true,
-              "explicacao": "Conduta para 25 anos ou mais."
+              "explicacao": "Paciente assintomático e sem valores de crise."
             },
             {
-              "texto": "Teste de DNA-HPV imediato",
+              "texto": "Pré-hipertensão; repetir a medida em 5 anos",
               "correta": false,
               "gerada_por_ia": true,
-              "explicacao": "Não recomendado abaixo de 25 anos."
+              "explicacao": "Os valores já atingem o critério de hipertensão."
             }
           ]
         },
         {
           "rotulo": "b",
-          "texto": "O uso de preservativo elimina o risco de transmissão do HPV?",
+          "texto": "Qual destas medidas faz parte do tratamento não farmacológico?",
           "tipo": "objetiva",
           "alternativas": [
             {
-              "texto": "Não; reduz significativamente, mas o vírus pode estar em áreas não cobertas",
+              "texto": "Reduzir o sal da dieta e praticar atividade física regular",
               "correta": true,
-              "explicacao": "Vulva e períneo não ficam cobertos."
+              "explicacao": "Mudanças de estilo de vida reduzem a pressão arterial."
             },
             {
-              "texto": "Sim; elimina completamente o risco",
+              "texto": "Aumentar o consumo de alimentos industrializados",
               "correta": false
             },
             {
-              "texto": "Não tem nenhum efeito sobre a transmissão",
+              "texto": "Suspender toda atividade física",
               "correta": false
             },
             {
-              "texto": "Só é útil se houver lesão visível",
+              "texto": "Nenhuma medida é necessária",
               "correta": false
             }
           ]
@@ -763,47 +763,37 @@ const SAMPLE_JSON = `\`\`\`json
       "pagina": 2
     },
     {
-      "area": "Medicina",
-      "disciplina": "Ginecologia",
-      "assunto": "Prolapso genital",
-      "rotulo": "QUESTÃO 1",
-      "enunciado": "Observe o esquema da classificação POP-Q.\n[Imagem: Aa 0, Ba +2, C 0, HG 4, CP 1, CVT 8, Ap 0, Bp +1, D -2]\nPara ele:",
+      "area": "Matemática",
+      "disciplina": "Cálculo",
+      "assunto": "Derivadas",
+      "rotulo": "QUESTÃO 2",
+      "enunciado": "Observe o gráfico da função f(x) = x² − 4x + 3.\\n[Imagem: parábola com raízes em x = 1 e x = 3 e vértice em (2, −1)]\\nPara ela:",
       "perguntas": [
         {
           "rotulo": "a",
-          "texto": "dê o diagnóstico (estádio);",
+          "texto": "calcule f'(x);",
           "tipo": "discursiva",
-          "resposta_esperada": "Prolapso de parede anterior e posterior — estádio 3.",
+          "resposta_esperada": "f'(x) = 2x − 4.",
           "pontos_chave": [
-            "Paredes anterior e posterior",
-            "Estádio 3"
+            "Regra da potência",
+            "f'(x) = 2x − 4"
           ]
         },
         {
           "rotulo": "b",
-          "texto": "sugira o tratamento cirúrgico (se houver);",
+          "texto": "determine o ponto de mínimo.",
           "tipo": "discursiva",
-          "resposta_esperada": "Colporrafia anterior com fixação da fáscia pubovesicocervical e colporrafia posterior com correção da fáscia retovaginal; histeropexia.",
+          "resposta_esperada": "f'(x) = 0 em x = 2; o ponto de mínimo é (2, −1).",
           "pontos_chave": [
-            "Colporrafia anterior",
-            "Colporrafia posterior",
-            "Histeropexia"
-          ]
-        },
-        {
-          "rotulo": "c",
-          "texto": "faça a correspondência (se possível) com a classificação de Baden e Walker.",
-          "tipo": "discursiva",
-          "resposta_esperada": "Grau 3.",
-          "pontos_chave": [
-            "Grau 3 de Baden-Walker"
+            "f'(x) = 0 em x = 2",
+            "Ponto de mínimo (2, −1)"
           ]
         }
       ],
       "tem_imagem": true,
-      "descricao_imagem": "Esquema POP-Q (grade 3×3) com os valores dos pontos.",
-      "dificuldade": "dificil",
-      "pagina": 2
+      "descricao_imagem": "Gráfico de uma parábola com concavidade para cima.",
+      "dificuldade": "facil",
+      "pagina": 3
     }
   ]
 }
@@ -812,8 +802,8 @@ const SAMPLE_JSON = `\`\`\`json
 /* ------------------------------ Manual ------------------------------ */
 
 function ManualPanel({ visibility, onDone }: { visibility: Visibility; onDone: (s: ReviewState) => void }) {
-  const [area, setArea] = useState('Medicina')
-  const [discipline, setDiscipline] = useState('Ginecologia')
+  const [area, setArea] = useState('')
+  const [discipline, setDiscipline] = useState('')
   const [topic, setTopic] = useState('')
   const [list, setList] = useState<DraftQuestion[]>([])
   const [editing, setEditing] = useState<DraftQuestion | null>(null)
@@ -822,13 +812,13 @@ function ManualPanel({ visibility, onDone }: { visibility: Visibility; onDone: (
     <Card className="p-5 sm:p-6">
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Área">
-          <input className={inputClass} value={area} onChange={(e) => setArea(e.target.value)} />
+          <input className={inputClass} value={area} placeholder="ex.: Medicina" onChange={(e) => setArea(e.target.value)} />
         </Field>
         <Field label="Disciplina">
-          <input className={inputClass} value={discipline} onChange={(e) => setDiscipline(e.target.value)} />
+          <input className={inputClass} value={discipline} placeholder="ex.: Cardiologia" onChange={(e) => setDiscipline(e.target.value)} />
         </Field>
         <Field label="Assunto">
-          <input className={inputClass} value={topic} placeholder="ex.: Prolapso genital" onChange={(e) => setTopic(e.target.value)} />
+          <input className={inputClass} value={topic} placeholder="ex.: Hipertensão arterial" onChange={(e) => setTopic(e.target.value)} />
         </Field>
       </div>
 

@@ -390,10 +390,10 @@ function CardEditor({ card, onClose, onSave }: { card: ImportCard; onClose: () =
         <Field label="Área" hint="Ex.: Medicina, Matemática, Direito">
           <input className={inputClass} value={c.area} onChange={(e) => setC({ ...c, area: e.target.value })} />
         </Field>
-        <Field label="Disciplina" hint="Ex.: Ginecologia, Cálculo">
+        <Field label="Disciplina" hint="Ex.: Cardiologia, Cálculo">
           <input className={inputClass} value={c.discipline} onChange={(e) => setC({ ...c, discipline: e.target.value })} />
         </Field>
-        <Field label="Assunto (opcional)" hint="Ex.: Prolapso genital — permite simulados bem específicos">
+        <Field label="Assunto (opcional)" hint="Ex.: Hipertensão arterial — permite simulados bem específicos">
           <input className={inputClass} value={c.topic} onChange={(e) => setC({ ...c, topic: e.target.value })} />
         </Field>
         <Field label="Descrição">
