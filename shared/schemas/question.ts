@@ -7,8 +7,8 @@ import { normalizeText } from '../guardrails'
  */
 
 /** Texto do usuário: normaliza (guardrails) e apara. */
-const text = (max: number) => z.string().max(max * 2).transform((s) => normalizeText(s).trim()).pipe(z.string().max(max))
-const optText = (max: number) =>
+export const text = (max: number) => z.string().max(max * 2).transform((s) => normalizeText(s).trim()).pipe(z.string().max(max))
+export const optText = (max: number) =>
   z
     .string()
     .max(max * 2)
@@ -54,6 +54,21 @@ export const itemInput = z
   alternatives: z.array(alternativeInput).max(QUESTION_LIMITS.alternatives * 2).default([]),
 }).transform((it) => ({ ...it, alternatives: it.alternatives.filter((a) => a.text) }))
 
+/** Conteúdo da questão (sem taxonomia): enunciado + perguntas + metadados. */
+const questionContentShape = {
+  sourceLabel: optText(60),
+  stem: text(QUESTION_LIMITS.stem).pipe(z.string().min(5, 'Escreva o enunciado.')),
+  items: z.array(itemInput).min(1, 'A questão precisa de pelo menos uma pergunta.').max(QUESTION_LIMITS.items),
+  difficulty: z.enum(['facil', 'media', 'dificil']).default('media'),
+  visibility: z.enum(['privada', 'publica']).default('privada'),
+  hasImage: z.boolean().default(false),
+  imageDescription: optText(4_000),
+}
+
+const refineItems = (q: { items: ItemLike[] }, ctx: z.RefinementCtx) => {
+  for (const msg of itemErrors(q.items)) ctx.addIssue({ code: 'custom', message: msg, path: ['items'] })
+}
+
 export const questionInput = z
   .object({
     areaId: z.uuid({ error: 'Escolha a área.' }),
@@ -61,17 +76,22 @@ export const questionInput = z
     discipline: text(80).pipe(z.string().min(2, 'Informe a disciplina.')),
     /** Assunto amplo (tema da aula). */
     topic: optText(120),
-    sourceLabel: optText(60),
-    stem: text(QUESTION_LIMITS.stem).pipe(z.string().min(5, 'Escreva o enunciado.')),
-    items: z.array(itemInput).min(1, 'A questão precisa de pelo menos uma pergunta.').max(QUESTION_LIMITS.items),
-    difficulty: z.enum(['facil', 'media', 'dificil']).default('media'),
-    visibility: z.enum(['privada', 'publica']).default('privada'),
-    hasImage: z.boolean().default(false),
-    imageDescription: optText(4_000),
+    ...questionContentShape,
   })
-  .superRefine((q, ctx) => {
-    for (const msg of itemErrors(q.items)) ctx.addIssue({ code: 'custom', message: msg, path: ['items'] })
+  .superRefine(refineItems)
+
+/** Questão dentro de um card da importação (a taxonomia vem do card) — `POST /api/imports/:id/commit`. */
+export const questionContentInput = z
+  .object({
+    ...questionContentShape,
+    /** Sinalizações da revisão (guardrail, "Processado sem IA", imagem não transcrita…). */
+    flags: z
+      .array(z.string().max(300))
+      .max(20)
+      .default([])
+      .transform((fs) => [...new Set(fs.map((f) => normalizeText(f).trim()).filter(Boolean))]),
   })
+  .superRefine(refineItems)
 
 export type QuestionInput = z.input<typeof questionInput>
 export type QuestionInputParsed = z.output<typeof questionInput>

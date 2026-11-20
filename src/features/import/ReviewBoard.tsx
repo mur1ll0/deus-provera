@@ -6,13 +6,33 @@ import { Badge, Button, Card, DemoTag, Field, inputClass, Modal } from '@/compon
 import { aiGenerateDistractors } from '@/mocks/ai'
 import { uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
 import { QuestionEditor } from '@/features/questions/QuestionEditor'
+import type { ReviewProblem } from './commit'
 import type { ReviewState } from './drafts'
 
 /**
  * Tela de revisão pós-processamento: cards por Área › Disciplina · Assunto.
  * O usuário arrasta questões entre cards, edita/cria cards e questões e confirma para salvar.
  */
-export function ReviewBoard({ state, onChange, onConfirm, onBack }: { state: ReviewState; onChange: (s: ReviewState) => void; onConfirm: () => void; onBack: () => void }) {
+export function ReviewBoard({
+  state,
+  onChange,
+  onConfirm,
+  onBack,
+  saving = false,
+  problems = [],
+  error,
+}: {
+  state: ReviewState
+  onChange: (s: ReviewState) => void
+  onConfirm: () => void
+  onBack: () => void
+  /** Commit em andamento (botão desabilitado). */
+  saving?: boolean
+  /** Itens que impedem salvar (validação local ou 400 do servidor) — T040. */
+  problems?: ReviewProblem[]
+  /** Erro geral do salvamento (rede, servidor). */
+  error?: string | null
+}) {
   const [editingCard, setEditingCard] = useState<ImportCard | null>(null)
   const [editingQ, setEditingQ] = useState<DraftQuestion | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -93,6 +113,16 @@ export function ReviewBoard({ state, onChange, onConfirm, onBack }: { state: Rev
   }
 
   const activeDraft = activeId ? drafts[activeId] : null
+  const invalidDrafts = [...new Set(problems.map((p) => p.draftId).filter((id): id is string => !!id && !!drafts[id]))]
+  const draftLabel = (id: string) => {
+    const d = drafts[id]
+    return d?.sourceLabel || (d?.stem ? `“${d.stem.slice(0, 60)}${d.stem.length > 60 ? '…' : ''}”` : 'Questão')
+  }
+  function removeInvalid() {
+    const drop = new Set(invalidDrafts)
+    const nextDrafts = Object.fromEntries(Object.entries(drafts).filter(([id]) => !drop.has(id)))
+    onChange({ ...state, drafts: nextDrafts, cards: cards.map((c) => ({ ...c, questionIds: c.questionIds.filter((x) => !drop.has(x)) })) })
+  }
 
   return (
     <div className="space-y-5">
@@ -153,14 +183,54 @@ export function ReviewBoard({ state, onChange, onConfirm, onBack }: { state: Rev
         <DragOverlay>{activeDraft ? <QuestionChip q={activeDraft} dragging /> : null}</DragOverlay>
       </DndContext>
 
+      {(problems.length > 0 || error) && (
+        <section role="alert" aria-labelledby="review-problems" className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <h2 id="review-problems" className="flex items-center gap-2 font-display text-sm font-bold text-rose-700">
+            <AlertTriangle size={16} /> {error ?? 'Ajuste estes itens antes de salvar'}
+          </h2>
+          {problems.length > 0 && (
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {problems.slice(0, 12).map((p, i) => (
+                <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="min-w-0 flex-1">
+                    {p.draftId && <b>{draftLabel(p.draftId)}: </b>}
+                    {p.cardId && <b>Card {cards.find((c) => c.id === p.cardId)?.topic || cards.find((c) => c.id === p.cardId)?.discipline}: </b>}
+                    {p.message}
+                  </span>
+                  {p.draftId && drafts[p.draftId] && (
+                    <Button size="sm" variant="secondary" onClick={() => setEditingQ(drafts[p.draftId!])}>
+                      <Pencil size={13} /> Editar
+                    </Button>
+                  )}
+                  {p.cardId && cards.find((c) => c.id === p.cardId) && (
+                    <Button size="sm" variant="secondary" onClick={() => setEditingCard(cards.find((c) => c.id === p.cardId)!)}>
+                      <Pencil size={13} /> Editar card
+                    </Button>
+                  )}
+                </li>
+              ))}
+              {problems.length > 12 && <li className="text-muted">…e mais {problems.length - 12}.</li>}
+            </ul>
+          )}
+          {invalidDrafts.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-rose-200 pt-3 text-sm">
+              <span className="text-muted">Prefere salvar só as que estão completas?</span>
+              <Button size="sm" variant="danger" onClick={removeInvalid}>
+                <Trash2 size={13} /> Tirar {invalidDrafts.length} {invalidDrafts.length === 1 ? 'questão' : 'questões'} com problema da importação
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white/95 p-4 shadow-lg backdrop-blur lg:bottom-4">
         <Button variant="ghost" onClick={onBack}>
           ← Voltar
         </Button>
         <div className="flex items-center gap-3">
           <span className="hidden text-sm text-muted sm:inline">Tudo certo? As questões serão salvas no seu banco.</span>
-          <Button size="lg" onClick={onConfirm} disabled={total === 0}>
-            <ListChecks size={18} /> Confirmar e salvar {total}
+          <Button size="lg" onClick={onConfirm} disabled={total === 0 || saving}>
+            <ListChecks size={18} /> {saving ? 'Salvando…' : `Confirmar e salvar ${total}`}
           </Button>
         </div>
       </div>

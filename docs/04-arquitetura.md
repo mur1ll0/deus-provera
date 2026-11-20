@@ -98,7 +98,7 @@ sequenceDiagram
   end
   B->>A: GET /api/imports/:id  → cards + rascunhos
   U->>B: revisa cards (arrasta, edita, cria)
-  B->>A: POST /api/imports/:id/commit {cards, drafts}
+  B->>A: POST /api/imports/:id/commit {cards[].questions[]}
   A->>DB: grava taxonomia, grupos, casos, questões, alternativas (batch)
 ```
 
@@ -133,7 +133,8 @@ sequenceDiagram
 | POST | `/api/imports` | Cria job (PDF texto ou JSON do agente) | 002 |
 | POST | `/api/imports/:id/run` | Avança o pipeline até ~240 s | 002 |
 | GET | `/api/imports/:id` | Status, cards e rascunhos | 002 |
-| POST | `/api/imports/:id/commit` | Grava questões revisadas | 002 |
+| POST | `/api/imports/:id/commit` | Grava questões revisadas (idempotente; [contrato](../specs/002-importacao-questoes/contracts/api-imports.md)) | 002 |
+| GET | `/api/imports` | Importações recentes (retomar as não salvas) | 002 |
 | GET/POST/PUT/DELETE | `/api/questions[/:id]` | Banco: listar (minhas/comunidade), criar manual, editar, excluir — [contrato](../specs/002-importacao-questoes/contracts/api-questions.md) | 002 |
 | GET | `/api/taxonomy` | Áreas e disciplinas (contagem de assuntos: S3) | 002/003 |
 | POST | `/api/simulados` | Cria tentativa (sorteio no servidor) | 003 |

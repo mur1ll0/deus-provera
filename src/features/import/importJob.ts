@@ -1,4 +1,4 @@
-import type { ImportQuestion } from '@shared/schemas/import'
+import type { ImportFile, ImportQuestion } from '@shared/schemas/import'
 import { apiFetch } from '@/lib/api'
 import type { PageImageCrop } from './pageImages'
 import type { ExtractedPdf } from './pdfExtract'
@@ -44,6 +44,8 @@ export interface ImportJobView {
   warnings: string[]
   cards?: ServerCard[]
   drafts?: Record<string, ServerDraft>
+  /** Job de agente externo: o JSON v2 validado (a revisão é montada no cliente). */
+  payload?: ImportFile | null
 }
 
 export type JobPhase = 'criando' | 'recortando' | 'imagens' | 'processando' | 'revisao'

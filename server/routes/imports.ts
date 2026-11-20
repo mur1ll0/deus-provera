@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { IMAGE_MARK_RE } from '../../shared/page-images'
 import { importFileSchema } from '../../shared/schemas/import'
+import { commitIssues, importCommitInput } from '../../shared/schemas/import-commit'
 import { applyImageResults, importGraph, type ImportState, type PageImageState } from '../ai/pipelines/import-graph'
 import { describeImageBatch, MAX_IMAGE_BASE64, VISION_BATCH } from '../ai/pipelines/vision'
 import { END } from '../ai/graph'
 import { db, schema } from '../db/client'
 import { requireUser, reserveAiRequest, type AppEnv } from '../middleware'
+import { commitImport } from '../services/import-commit'
 import { loadTaxonomyForPrompt } from '../services/taxonomy'
 
 /**
@@ -19,6 +21,7 @@ import { loadTaxonomyForPrompt } from '../services/taxonomy'
  *  POST /imports/:id/run     avança o grafo até ~240 s (cliente chama em loop até status "revisao")
  *  GET  /imports/:id         estado/progresso
  *  POST /imports/:id/commit  grava cards+questões revisados pelo usuário (specs/002 § Confirmação)
+ *  GET  /imports             importações recentes do usuário (?status=processando → retomáveis)
  */
 
 const IMAGE_ID = /^p\d{1,3}-\d{1,2}$/
@@ -38,6 +41,8 @@ const createSchema = z.discriminatedUnion('source', [
       .default([]),
   }),
   z.object({ source: z.literal('agente_externo'), payload: importFileSchema }),
+  // Lote digitado na tela (T048): nasce em revisão e é salvo pelo mesmo /commit.
+  z.object({ source: z.literal('manual'), fileName: z.string().max(200).optional() }),
 ])
 
 /** Um lote de recortes JPEG/PNG (base64 sem `data:`), ≤ 3 por requisição para caber nos 4,5 MB. */
@@ -78,6 +83,13 @@ export const importsRoutes = new Hono<AppEnv>()
       const [job] = await db()
         .insert(schema.importJob)
         .values({ ownerId: user.id, source: 'agente_externo', fileName: body.data.payload.origem?.arquivo ?? null, status: 'revisao', state: { payload: body.data.payload } })
+        .returning()
+      return c.json({ id: job.id, status: job.status }, 201)
+    }
+    if (body.data.source === 'manual') {
+      const [job] = await db()
+        .insert(schema.importJob)
+        .values({ ownerId: user.id, source: 'manual', fileName: body.data.fileName ?? null, status: 'revisao', state: {} })
         .returning()
       return c.json({ id: job.id, status: job.status }, 201)
     }
@@ -230,9 +242,30 @@ export const importsRoutes = new Hono<AppEnv>()
     })
   })
 
-  .post('/:id/commit', async () => {
-    // TODO(spec 002 / T-0xx): validar cards revisados, resolver taxonomia (findOrCreate),
-    // calcular content_hash, inserir question_group/question_case/question/alternative em db.batch(),
-    // marcar job como "concluida". Ver specs/002-importacao-questoes/tasks.md.
-    throw new HTTPException(501, { message: 'Não implementado (fase 1).' })
+  .get('/', async (c) => {
+    const user = c.get('user')!
+    const status = z.enum(['processando', 'revisao', 'concluida', 'falhou']).optional().catch(undefined).parse(c.req.query('status'))
+    const j = schema.importJob
+    const jobs = await db()
+      .select({ id: j.id, source: j.source, fileName: j.fileName, status: j.status, createdAt: j.createdAt, updatedAt: j.updatedAt })
+      .from(j)
+      .where(and(eq(j.ownerId, user.id), status ? eq(j.status, status) : undefined))
+      .orderBy(desc(j.updatedAt))
+      .limit(20)
+    return c.json({ jobs })
+  })
+
+  /*
+   * Commit (T024): grava a revisão no banco. Valida tudo antes (mesmas regras do editor) e responde
+   * 400 com a lista de problemas por card/questão — nada é gravado se houver item inválido.
+   */
+  .post('/:id/commit', async (c) => {
+    const user = c.get('user')!
+    const parsed = importCommitInput.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) {
+      const items = commitIssues(parsed.error)
+      const bad = new Set(items.map((i) => `${i.card}|${i.question ?? ''}`)).size
+      return c.json({ error: bad > 1 ? `${bad} itens precisam de ajuste antes de salvar.` : (items[0]?.message ?? 'Dados inválidos.'), items }, 400)
+    }
+    return c.json(await commitImport(user.id, c.req.param('id'), parsed.data))
   })

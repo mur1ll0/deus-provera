@@ -11,6 +11,10 @@ export interface ReviewState {
   drafts: Record<string, DraftQuestion>
   source: 'pdf_ia' | 'agente_externo' | 'manual'
   fileName?: string
+  /** Job no servidor (PDF); agente externo e lote manual criam o seu ao salvar. */
+  jobId?: string
+  /** JSON v2 do agente externo (revalidado no servidor ao criar o job — T023). */
+  payload?: ImportFile
 }
 
 /** Aplica o guardrail em um campo e acumula as sinalizações. */
@@ -110,7 +114,7 @@ export function draftsFromImportFile(file: ImportFile, visibility: Visibility): 
     drafts[d.id] = d
     upsertCard(cards, q.area, q.disciplina, q.assunto ?? '', d.id)
   }
-  return { cards: describeCards([...cards.values()], drafts), drafts, source: 'agente_externo', fileName: file.origem?.arquivo ?? undefined }
+  return { cards: describeCards([...cards.values()], drafts), drafts, source: 'agente_externo', fileName: file.origem?.arquivo ?? undefined, payload: file }
 }
 
 /**

@@ -69,7 +69,7 @@ Resposta 201 do PDF: `{ "id", "status": "processando", "images": <nº de imagens
 | Código | Quando | Corpo |
 |---|---|---|
 | 201 | PDF: job criado | `{ "id": "uuid", "status": "processando" }` |
-| 201 | Agente externo: job criado | `{ "id": "uuid", "status": "revisao" }`. **Hoje a rota devolve a linha inteira de `import_job`; padronizar para este formato** |
+| 201 | Agente externo ou lote manual (`{ "source": "manual", "fileName"? }`): job criado em revisão | `{ "id": "uuid", "status": "revisao" }` |
 | 400 | Corpo inválido | `{ "error": "<primeira mensagem de validação>" }` |
 | 401 | Sem sessão | `{ "error": "Faça login para continuar." }` |
 | 413 | Corpo > 4,5 MB (Vercel) | Página de erro da plataforma (`FUNCTION_PAYLOAD_TOO_LARGE`). O cliente deve evitar, dividindo em vários jobs |
@@ -165,49 +165,90 @@ Erros: 429 → "Importação pausada" com **Tentar continuar** (mesmo job, do ch
 
 - `cards` e `drafts` só vêm em `revisao`. Cada rascunho segue o [contrato v2](./import-format-v2.md) + `id`, `blockId`, `resumo`, `flags`.
 - Para jobs de agente externo, `payload` traz o JSON v2 validado, e a conversão para cards é feita no cliente (`draftsFromImportFile`). *(Planejado: o servidor devolver `cards`/`drafts` também nesse caso, unificando o formato.)*
-- *(Planejado)* `GET /api/imports?status=processando` lista os jobs retomáveis do usuário.
+- `GET /api/imports` lista os jobs do usuário (ver abaixo).
 
 ---
 
 ## `POST /api/imports/:id/commit` — gravar a revisão
 
-> **Estado atual: `501 Não implementado (fase 1)`.** Abaixo, o contrato-alvo (tarefa T024).
+Implementado em [`server/services/import-commit.ts`](../../../server/services/import-commit.ts). A validação é compartilhada com o cliente em [`shared/schemas/import-commit.ts`](../../../shared/schemas/import-commit.ts), com as mesmas regras do editor e de `/api/questions`.
 
-### Corpo
+Todo método passa por um job:
+- **PDF:** o job criado em `POST /api/imports`.
+- **Agente externo:** a tela cria o job (`source: agente_externo`, JSON revalidado no servidor) ao salvar.
+- **Lote manual:** a tela cria um job `{ "source": "manual" }` (nasce em `revisao`) ao salvar.
+
+### Corpo (modelo v2: enunciado + perguntas)
 
 ```json
 {
-  "visibility": "publica",
   "cards": [
-    { "area": "Medicina", "disciplina": "Ginecologia", "assunto": "Prolapso genital", "descricao": "POP-Q e tratamento",
-      "questionIds": ["b1-1", "b2-2"] }
-  ],
-  "drafts": {
-    "b1-1": { "tipo": "discursiva", "caso_id": "Q0", "contexto": "…", "enunciado": "…", "resposta_esperada": "…",
-              "pontos_chave": ["…"], "alternativas": null, "dificuldade": "media", "tem_imagem": true,
-              "descricao_imagem": "…", "visibility": "privada" }
-  }
+    {
+      "area": "Medicina", "discipline": "Ginecologia", "topic": "Prolapso genital", "description": "POP-Q e tratamento",
+      "questions": [
+        {
+          "sourceLabel": "QUESTÃO 8",
+          "stem": "Joana tem 45 anos… Responda:",
+          "items": [
+            { "label": "a", "prompt": "Há necessidade de outro exame?", "type": "discursiva", "expectedAnswer": "Sim, DNA-HPV.", "keyPoints": ["DNA-HPV"],
+              "alternatives": [{ "text": "Sim", "correct": true, "source": "ia" }, { "text": "Não", "correct": false, "source": "ia" }] }
+          ],
+          "difficulty": "media", "visibility": "publica", "hasImage": false, "imageDescription": null,
+          "flags": ["Processado sem IA — revise"]
+        }
+      ]
+    }
+  ]
 }
 ```
 
-Regras no servidor:
-1. Revalidar cada rascunho contra o contrato v2 (área/disciplina vêm do card) e reaplicar `inspectText` em todos os campos de texto.
-2. Rejeitar o commit inteiro (**400**, com lista de erros por `questionId`) se houver item inválido. *(Alternativa em aberto na spec: "salvar só as válidas".)*
-3. Em um único `db.batch`: findOrCreate de `area`/`discipline` por slug (`slugify`), um `question_group` por card, um `question_case` por `caso_id` distinto (com `contexto`), `question` com `case_order` pela ordem dos subitens, `content_hash` e `alternative` com `position`.
-4. Deduplicar por `(owner_id, content_hash)`. Duplicatas são ignoradas e contadas.
-5. Gravar `commit_result` e `status = concluida` no job.
+| Limite | Valor |
+|---|---|
+| Cards | 1–200 |
+| Questões por card | 1–500 |
+| Questões por importação | ≤ 1000 |
+| Corpo | ≤ 4,5 MB (Vercel) |
+
+Regras por questão: as de `questionInput` (`/api/questions`).
+- Enunciado ≥ 5 caracteres.
+- De 1 a 20 perguntas. Com várias perguntas, todas precisam de texto.
+- Discursiva exige `expectedAnswer`.
+- Objetiva exige ≥ 2 alternativas.
+- Com alternativas, exatamente 1 correta, e no máximo 8.
+- Os textos passam por `normalizeText`.
+
+`visibility` vale por questão (padrão `privada`) — T025. O card "Revisar categoria" (`Sem área` / `Sem disciplina`) é recusado até o usuário escolher a classificação.
+
+### Gravação
+
+1. **Taxonomia:** área e disciplina por **slug**, criadas se não existirem (globais, idempotente).
+2. **Card:** reaproveita o `question_group` do dono com a mesma Área › Disciplina · Assunto; senão cria (com `description`).
+3. **Duplicatas:** por `content_hash` (enunciado + perguntas + alternativas normalizados), contra o banco do usuário (não excluídas) e dentro do lote. São puladas e contadas (SC-007).
+4. **Escrita:** um único `db.batch`, inserções em fatias de 400 linhas.
+   - O job vira `concluida`.
+   - `state` passa a ser só `{ commitResult }`: o texto do PDF e os rascunhos saem do banco.
+   - `origin` da questão = `source` do job (`pdf_ia` | `agente_externo` | `manual`).
 
 ### Respostas
 
 | Código | Quando | Corpo |
 |---|---|---|
-| 200 | Gravado | `{ "saved": 139, "duplicates": 2, "groups": [{ "id": "uuid", "area": "Medicina", "disciplina": "Ginecologia", "assunto": "Prolapso genital", "count": 35 }] }` |
-| 200 | Commit repetido (job `concluida`) | O mesmo `commit_result` anterior (**idempotente**) |
-| 400 | Validação | `{ "error": "3 questões inválidas", "items": [{ "questionId": "b7-9", "path": "resposta_esperada", "message": "…" }] }` |
-| 401 / 404 | | |
-| 409 | Job ainda em `processando` | `{ "error": "Importação ainda em processamento." }` |
-| 413 | Corpo > 4,5 MB | O cliente envia em partes (`?part=1&of=3`, planejado) |
-| 501 | Implementação atual | `{ "error": "Não implementado (fase 1)." }` |
+| 200 | Gravado | `{ "saved": 139, "duplicates": 2, "groups": [{ "id": "uuid", "area": "Medicina", "discipline": "Ginecologia", "topic": "Prolapso genital", "count": 35 }] }` (só cards que receberam questões) |
+| 200 | Commit repetido (job `concluida`) | O mesmo resultado anterior (**idempotente**) |
+| 400 | Validação — **nada é gravado** | `{ "error": "3 itens precisam de ajuste antes de salvar.", "items": [{ "card": 0, "question": 4, "message": "Resposta: informe a resposta esperada." }, { "card": 2, "message": "Escolha a área do card \"Revisar categoria\"." }] }` (`card`/`question` = índices no corpo) |
+| 401 / 404 | Sem sessão / job inexistente ou de outro usuário | |
+| 409 | Job em `processando` (ou fora de `revisao`) | `{ "error": "Importação ainda em processamento." }` |
+| 413 | Corpo > 4,5 MB | A tela pede para salvar em duas vezes |
+
+**Na tela (T040, decisão):** com itens inválidos a confirmação fica bloqueada. Isso vale tanto na pré-validação local, com o mesmo schema, quanto num 400 do servidor. A revisão lista cada problema com **Editar** (questão ou card) e oferece **Tirar N questões com problema da importação**, para quem prefere salvar só as completas.
+
+---
+
+## `GET /api/imports` — importações recentes (T035)
+
+`?status=processando|revisao|concluida|falhou` (opcional). Resposta: `{ "jobs": [{ "id", "source", "fileName", "status", "createdAt", "updatedAt" }] }` (até 20, mais recentes primeiro).
+
+A tela de importação lista as **não salvas** (`processando` e `revisao`, exceto lotes manuais), com **Continuar** ou **Revisar**. Assim o resultado da IA não se perde ao recarregar a página ou trocar de dispositivo.
 
 ---
 

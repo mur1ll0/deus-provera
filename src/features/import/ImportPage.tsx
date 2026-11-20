@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { Bot, CheckCircle2, ClipboardCopy, FileText, FileUp, ImageIcon, Loader2, PencilLine, PartyPopper, ShieldAlert, Timer, Trash2, UploadCloud } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { Visibility } from '@shared/domain'
@@ -13,7 +14,9 @@ import { useStore } from '@/mocks/store'
 import { type DraftQuestion } from '@/mocks/model'
 import { QuestionEditor } from '@/features/questions/QuestionEditor'
 import { useAuth } from '@/app/auth-context'
+import { apiFetch, unwrap } from '@/lib/api'
 import { draftsFromImportFile, draftsFromSegments, draftsFromServerJob, emptyDraft, type ReviewState } from './drafts'
+import { CommitError, commitReview, type ReviewProblem } from './commit'
 import { batchPageImages, type ImportJobView } from './importJob'
 import { JobProgressCard } from './JobProgress'
 import type { PageImageCrop } from './pageImages'
@@ -36,17 +39,38 @@ export function ImportPage() {
   const [step, setStep] = useState<Step>('entrada')
   const [pipelineIndex, setPipelineIndex] = useState(0)
   const [review, setReview] = useState<ReviewState | null>(null)
-  const [savedCount, setSavedCount] = useState(0)
+  const [saved, setSaved] = useState<{ saved: number; duplicates: number }>({ saved: 0, duplicates: 0 })
+  const [problems, setProblems] = useState<ReviewProblem[]>([])
+  const queryClient = useQueryClient()
   const [visibility, setVisibility] = useState<Visibility>('publica')
   // API real (sessão do Better Auth) → job no servidor; protótipo sem API → pipeline simulado
   const real = useAuth().mode === 'real'
   const job = useImportJob()
   const [jobVision, setJobVision] = useState(false)
 
+  // Salvar de verdade (T027): POST /api/imports/:id/commit; erros de validação voltam para a revisão.
+  const commit = useMutation({
+    mutationFn: (r: ReviewState) => commitReview(r, (jobId) => setReview((cur) => (cur ? { ...cur, jobId } : cur))),
+    onMutate: () => setProblems([]),
+    onSuccess: (r) => {
+      setSaved({ saved: r.saved, duplicates: r.duplicates })
+      setStep('concluido')
+      void queryClient.invalidateQueries({ queryKey: ['questions'] })
+      void queryClient.invalidateQueries({ queryKey: ['taxonomy'] })
+      void queryClient.invalidateQueries({ queryKey: ['imports'] })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    },
+    onError: (err) => {
+      if (err instanceof CommitError) setProblems(err.problems)
+    },
+  })
+
   /** Job terminou no servidor → rascunhos + cards da IA na revisão. */
   function openJobReview(view: ImportJobView | null, fileName?: string) {
     if (!view) return // erro/cota/cancelado: o cartão de progresso mostra o que fazer
-    setReview(draftsFromServerJob(view, visibility, fileName))
+    const base = view.payload ? draftsFromImportFile(view.payload, visibility) : draftsFromServerJob(view, visibility, fileName)
+    setReview({ ...base, jobId: view.id })
+    setProblems([])
     setStep('revisao')
     job.reset()
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -71,6 +95,7 @@ export function ImportPage() {
       await runMockPipeline(setPipelineIndex)
     }
     setReview(build())
+    setProblems([])
     setStep('revisao')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -129,6 +154,8 @@ export function ImportPage() {
             </div>
           )}
 
+          {real && <OpenImports hide={job.pending?.id} onOpen={(j) => resumeJob(j.id, j.fileName ?? undefined)} />}
+
           {method === 'pdf' && <PdfPanel real={real} onProcess={processPdf} />}
           {method === 'agente' && <AgentPanel onImport={(r) => process(() => draftsFromImportFile(r.data!, visibility), false)} />}
           {method === 'manual' && <ManualPanel visibility={visibility} onDone={(s) => process(() => s, false)} />}
@@ -158,11 +185,22 @@ export function ImportPage() {
       {step === 'revisao' && review && (
         <ReviewBoard
           state={review}
-          onChange={setReview}
+          onChange={(next) => {
+            setReview(next)
+            // Problemas de questões removidas/editadas somem; os demais são reavaliados ao salvar.
+            setProblems((ps) => ps.filter((p) => !p.draftId || (next.drafts[p.draftId] && next.drafts[p.draftId] === review.drafts[p.draftId])))
+          }}
           onBack={() => setStep('entrada')}
+          saving={commit.isPending}
+          problems={problems}
+          error={commit.error && !(commit.error instanceof CommitError) ? commit.error.message : problems.length ? null : undefined}
           onConfirm={() => {
-            setSavedCount(commitImport(review.cards, review.drafts) || review.cards.reduce((a, c) => a + c.questionIds.length, 0))
-            setStep('concluido')
+            if (!real) {
+              const n = commitImport(review.cards, review.drafts) || review.cards.reduce((a, c) => a + c.questionIds.length, 0)
+              setSaved({ saved: n, duplicates: 0 })
+              return setStep('concluido')
+            }
+            commit.mutate(review)
           }}
         />
       )}
@@ -170,8 +208,13 @@ export function ImportPage() {
       {step === 'concluido' && (
         <Card className="mx-auto max-w-xl p-8 text-center">
           <PartyPopper className="mx-auto text-gold-600" size={40} />
-          <h2 className="mt-3 text-2xl font-extrabold">{savedCount} questões salvas!</h2>
-          <p className="mt-2 text-sm text-muted">Elas já estão no seu banco e prontas para entrar nos seus simulados.</p>
+          <h2 className="mt-3 text-2xl font-extrabold">
+            {saved.saved} {saved.saved === 1 ? 'questão salva' : 'questões salvas'}!
+          </h2>
+          <p className="mt-2 text-sm text-muted">
+            {saved.saved > 0 ? 'Elas já estão no seu banco e prontas para entrar nos seus simulados.' : 'Nada novo para salvar.'}
+            {saved.duplicates > 0 && ` ${saved.duplicates} ${saved.duplicates === 1 ? 'já estava' : 'já estavam'} no seu banco e ${saved.duplicates === 1 ? 'foi ignorada' : 'foram ignoradas'}.`}
+          </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             <Link to="/simulados">
               <Button>
@@ -194,6 +237,51 @@ export function ImportPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+interface OpenJob {
+  id: string
+  source: 'pdf_ia' | 'agente_externo' | 'manual'
+  fileName: string | null
+  status: 'processando' | 'revisao'
+  updatedAt: string
+}
+
+/**
+ * Importações que ainda não foram salvas (T035): o resultado da IA fica no servidor, então dá para
+ * voltar à revisão depois de recarregar a página ou trocar de dispositivo.
+ */
+function OpenImports({ hide, onOpen }: { hide?: string; onOpen: (job: OpenJob) => void }) {
+  const q = useQuery({
+    queryKey: ['imports', 'abertas'],
+    queryFn: async () => (await unwrap(apiFetch('/api/imports'))) as { jobs: (Omit<OpenJob, 'status'> & { status: string })[] },
+    staleTime: 10_000,
+  })
+  const jobs = (q.data?.jobs ?? []).filter(
+    (j): j is OpenJob => (j.status === 'processando' || j.status === 'revisao') && j.source !== 'manual' && j.id !== hide,
+  )
+  if (!jobs.length) return null
+  return (
+    <section aria-labelledby="open-imports" className="mb-4 rounded-xl border border-line bg-white p-3">
+      <h2 id="open-imports" className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">
+        Importações não salvas
+      </h2>
+      <ul className="space-y-2">
+        {jobs.slice(0, 5).map((j) => (
+          <li key={j.id} className="flex flex-wrap items-center gap-2 text-sm">
+            {j.status === 'processando' ? <Loader2 size={16} className="shrink-0 text-brand-600" /> : <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />}
+            <span className="min-w-0 flex-1 truncate">
+              <b>{j.fileName || (j.source === 'agente_externo' ? 'JSON do agente' : 'PDF')}</b>
+              <span className="text-muted"> · {j.status === 'processando' ? 'processando' : 'pronta para revisar'} · {new Date(j.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => onOpen(j)}>
+              {j.status === 'processando' ? 'Continuar' : 'Revisar'}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

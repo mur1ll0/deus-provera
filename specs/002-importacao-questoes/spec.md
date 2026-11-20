@@ -206,5 +206,5 @@ Como estudante, quero digitar questões uma a uma (objetivas ou discursivas), in
 ## Pontos em aberto
 
 - [PRECISA ESCLARECER: a visibilidade padrão das questões importadas deve ser "pública" (como no protótipo) ou "privada"? Há implicações de direitos autorais para material de professores.]
-- [PRECISA ESCLARECER: ao salvar com itens bloqueantes, preferimos impedir a confirmação ou oferecer "salvar só as válidas"?]
+- ~~Ao salvar com itens bloqueantes: impedir ou "salvar só as válidas"?~~ **Decidido (2026-11-20):** impedir a confirmação, listando os problemas, e oferecer a ação explícita "Tirar N questões com problema da importação" — nada é descartado sem o usuário pedir (T040).
 - [PRECISA ESCLARECER: a geração de distratores no pipeline do PDF deve vir marcada por padrão (consome ~1 requisição a cada 6 discursivas) ou ficar opcional?]

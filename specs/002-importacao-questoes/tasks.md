@@ -36,11 +36,11 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T020 Painel "Usar meu agente de IA": copiar prompt, colar, aviso de guardrail, erros de validação (`src/features/import/ImportPage.tsx` › `AgentPanel`)
 - [x] T021 JSON v2 → rascunhos + cards (`src/features/import/drafts.ts` › `draftsFromImportFile`)
 - [x] T022 Aceitar vários blocos ` ```json ` colados de uma vez e unir as questões (`shared/schemas/import.ts` › `parseImportText`) + teste
-- [ ] T023 `POST /api/imports` com `source: agente_externo` revalidando no servidor (já existe em `server/routes/imports.ts`). Ligar o cliente via `useImportJob` (`src/features/import/useImportJob.ts`)
-- [ ] T024 Commit atômico: findOrCreate de área/disciplina por slug, `question_group` por card, `question_case` por `caso_id`, `question` (com `case_order`, `content_hash`), `alternative` (com `position`), deduplicação e idempotência via `import_job.commit_result` (`server/services/import-commit.ts`, `server/routes/imports.ts` › `/:id/commit`, `server/db/schema.ts`)
-- [ ] T025 Aceitar `visibility` padrão na criação e no commit (`server/routes/imports.ts`)
-- [ ] T026 Teste de integração: importar o JSON de exemplo duas vezes → 0 duplicatas (SC-007) (`server/__tests__/import-commit.test.ts`)
-- [ ] T027 Trocar `commitImport` do store mock pela chamada real e exibir `{ saved, duplicates }` (`src/features/import/ImportPage.tsx`)
+- [x] T023 `POST /api/imports` com `source: agente_externo` revalidando no servidor. O cliente cria o job ao salvar e reabre a revisão pelo `payload` do job (`src/features/import/commit.ts`, `ImportPage.tsx`)
+- [x] T024 Commit atômico: findOrCreate de área/disciplina por slug, `question_group` por card, `question_case` por `caso_id`, `question` (com `case_order`, `content_hash`), `alternative` (com `position`), deduplicação e idempotência via `import_job.commit_result` (`server/services/import-commit.ts`, `server/routes/imports.ts` › `/:id/commit`, `server/db/schema.ts`)
+- [x] T025 `visibility` por questão no commit (padrão `privada`; a tela aplica a escolha "Compartilhar com a comunidade" a todas) (`shared/schemas/import-commit.ts`)
+- [x] T026 Teste de integração: importar o JSON de exemplo duas vezes → 0 duplicatas (SC-007) (`server/__tests__/import-commit.db.test.ts`, `import-routes.db.test.ts` — `npm run test:db`)
+- [x] T027 Trocar `commitImport` do store mock pela chamada real e exibir `{ saved, duplicates }` (`src/features/import/ImportPage.tsx`, `commit.ts`; o store mock segue só no modo protótipo)
 
 ## Fase 4 — US2 PDF com IA (P1)
 
@@ -51,7 +51,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T032 Com sessão real, o PDF vai pelo job real (`draftsFromServerJob` monta a revisão com os cards e sinalizações da IA); `runMockPipeline`/`classifyQuestion` ficam só no modo protótipo sem API (`src/features/import/ImportPage.tsx`, `src/features/import/drafts.ts`)
 - [ ] T033 Classificar em lotes de até 40 questões e mesclar os grupos por área/disciplina/assunto (`server/ai/pipelines/import-graph.ts` › `classify`)
 - [ ] T034 Dividir no cliente textos > 4 MB em vários jobs e truncar páginas > 60.000 caracteres com aviso (`src/features/import/useImportJob.ts`)
-- [ ] T035 Lista "Importações em andamento" na página de importação (`GET /api/imports?status=processando`, `server/routes/imports.ts`, `src/features/import/ImportPage.tsx`)
+- [x] T035 Lista "Importações não salvas" (processando ou em revisão) na página de importação (`GET /api/imports`, `server/routes/imports.ts`, `src/features/import/ImportPage.tsx` › `OpenImports`)
 - [x] T036 Mensagem de cota esgotada (429) sugerindo o agente externo, com "Tentar continuar" do checkpoint (`src/features/import/JobProgress.tsx`)
 - [ ] T037 Conjunto de avaliação PT-BR (20 blocos dos PDFs de exemplo com gabarito estruturado) + script `npm run ai:eval` (`server/ai/eval/`, `package.json`) para SC-002/SC-004
 
@@ -59,9 +59,9 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 
 - [x] T038 `ReviewBoard`: cards, contagens, flags, drag-and-drop (ponteiro + teclado), "Mover para…", editar/criar/remover card, descartar e editar questão (`src/features/import/ReviewBoard.tsx`)
 - [x] T039 Editor de questão compartilhado (`src/features/questions/QuestionEditor.tsx`)
-- [ ] T040 Bloquear a confirmação com itens bloqueantes ou oferecer "salvar só as válidas" (decisão em aberto na spec) (`src/features/import/ReviewBoard.tsx`)
+- [x] T040 Itens inválidos bloqueiam a confirmação, com lista de problemas (Editar questão/card) e a opção explícita "Tirar N questões com problema da importação" (`src/features/import/ReviewBoard.tsx`)
 - [ ] T041 Anúncios `aria-live` ao mover questões e instruções de teclado do dnd-kit em pt-BR (`src/features/import/ReviewBoard.tsx`)
-- [ ] T042 Persistir o rascunho da revisão no `import_job` (autosave) para não perder edições ao recarregar (`PATCH /api/imports/:id/draft`, `server/routes/imports.ts`)
+- [ ] T042 Persistir o rascunho da revisão no `import_job` (autosave) para não perder edições ao recarregar (`PATCH /api/imports/:id/draft`, `server/routes/imports.ts`) — parcial: o resultado da IA já pode ser reaberto pela lista de importações não salvas (T035); as edições feitas na revisão ainda não
 
 ## Fase 6 — US4 Distratores com IA (P2)
 
@@ -73,7 +73,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 ## Fase 7 — US5 Cadastro manual (P2)
 
 - [x] T047 Painel manual com área/disciplina/assunto do lote e lista de questões (`src/features/import/ImportPage.tsx` › `ManualPanel`)
-- [ ] T048 Enviar o lote manual pelo mesmo commit (`source: manual`) (`server/routes/imports.ts`, `src/features/import/useImportJob.ts`)
+- [x] T048 Enviar o lote manual pelo mesmo commit (`source: manual`) (`server/routes/imports.ts`, `src/features/import/commit.ts`)
 - [x] T055 Contrato zod da questão v2 compartilhado com o editor (`shared/schemas/question.ts`) + testes (`shared/__tests__/question-schema.test.ts`)
 - [x] T056 `/api/questions`: listar (minhas/comunidade/todas, filtros), obter, criar manual, editar (substituição completa), excluir (soft-delete) e `/api/taxonomy` (`server/routes/questions.ts`, `server/services/questions.ts`, `server/routes/taxonomy.ts`) — contrato em [contracts/api-questions.md](./contracts/api-questions.md)
 - [x] T057 Banco de questões lendo da API com cliente Hono RPC + TanStack Query: "Nova questão" (Área › Disciplina › Assunto + editor), editar e excluir com confirmação (`src/lib/api.ts`, `src/features/questions/QuestionBankPage.tsx`, `src/features/questions/QuestionEditor.tsx`)
