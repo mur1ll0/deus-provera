@@ -119,7 +119,7 @@ sequenceDiagram
       G->>G: zod + grounding (reparo / próximo modelo / fallback determinístico)
       G->>DB: checkpoint (import_job.state)
     end
-    G->>OR: classify (lotes de 40) → cards
+    G->>OR: classify (lotes de 20) → cards
     opt distratores
       G->>OR: distractors (lotes de 6) + checkDistractors
     end
@@ -145,7 +145,7 @@ sequenceDiagram
 | Prompt injection dentro do PDF | Saída manipulada / vazamento | Guardrail em camadas, nonce, sem ferramentas, schema estrito, grounding, renderização como texto |
 | Job > 300 s | Timeout da função | `runUntil` com prazo de 240 s e folga de 60 s, checkpoint por nó, retomada pelo cliente |
 | Texto grande demais para uma requisição | 413 | Limites por página (60k) e por job (400 páginas). O cliente divide em vários jobs se passar de ~4 MB |
-| Classificação de muitas questões numa chamada estoura tokens de saída | Card "Revisar categoria" enorme | Classificar em lotes de 40 (ajuste necessário no nó `classify`) |
+| Classificação de muitas questões numa chamada estoura tokens de saída | Card "Revisar categoria" enorme | Classificar em lotes de 20 (nó `classify` em loop; feito em 2026-11-20 — com 85 questões numa chamada, só 3 vinham classificadas) |
 | Distratores ruins | Simulado objetivo fraco | `checkDistractors` + reparo, etiqueta "IA" e edição manual |
 | Orçamento não decrementa | Cota estourada sem controle | Gravar `ai_call` em toda tentativa (`ai/telemetry.ts`) — hoje ausente |
 
@@ -158,4 +158,4 @@ O que já existe no repositório:
 - **Servidor** (`server/*`): schema completo, `StateGraph`, grafo de importação com todos os nós e fallbacks, cliente de IA com 3 camadas e breaker, prompts, schemas de saída e checagens de qualidade, rotas `POST /`, `POST /:id/run`, `GET /:id`. Compila, mas não foi executado contra Neon/OpenRouter reais.
 - **Visão (2026-11-20)**: nó `vision` no grafo (antes de `segment`), `POST /:id/images`, recortes por imagem no navegador (`pageImages.ts`, prévia "Ver recortes") e em Node (`scripts/pdf-images-node.ts`), medida com `npm run eval:import -- --vision` (docs/10 §7). Com sessão real, a tela de importação usa o job do servidor (`importJob.ts` + `useImportJob`): cria o job, envia os recortes, acompanha `/run` e abre a revisão; retomável e com tratamento de 429 (T031/T032/T036/T060). Testado de ponta a ponta contra a rota real com banco/IA simulados; ainda não contra Neon + login Google.
 - **Commit (2026-11-20, S2)**: `POST /api/imports/:id/commit` grava a revisão no Neon (taxonomia por slug, cards reaproveitados, dedupe por `content_hash`, `db.batch`, idempotente); agente externo e lote manual criam o seu job; a revisão bloqueia itens inválidos (T040) e lista importações não salvas (T035). Testes de integração em `npm run test:db`.
-- **Lacunas conhecidas**: autosave das edições da revisão (T042), telemetria `ai_call` não gravada (o orçamento não decrementa), classificação sem lotes, `visibility` não aceita na criação do job, colagem de múltiplos blocos JSON não suportada na UI, validação de "exatamente 1 correta" não aplicada a discursivas com alternativas.
+- **Lacunas conhecidas**: autosave das edições da revisão (T042), telemetria `ai_call` não gravada (o orçamento não decrementa), `visibility` não aceita na criação do job, colagem de múltiplos blocos JSON não suportada na UI, validação de "exatamente 1 correta" não aplicada a discursivas com alternativas.

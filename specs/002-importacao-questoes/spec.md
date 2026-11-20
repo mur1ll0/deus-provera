@@ -147,12 +147,12 @@ Como estudante, quero digitar questões uma a uma (objetivas ou discursivas), in
 
 **Pipeline (PDF com IA)**
 
-- **FR-013**: O servidor DEVE criar um job de importação persistido (`import_job`) e processá-lo com o grafo `guard → segment → structure (loop por lote) → classify → [plan-distractors → distractors (loop)] → validate`, gravando checkpoint após cada nó.
+- **FR-013**: O servidor DEVE criar um job de importação persistido (`import_job`) e processá-lo com o grafo `guard → segment → structure (loop por lote) → classify (loop por lote) → [plan-distractors → distractors (loop)] → validate`, gravando checkpoint após cada nó.
 - **FR-014**: Cada chamada a `POST /api/imports/:id/run` DEVE processar nós até ~240 s e devolver o estado. O cliente DEVE repetir a chamada até o status `revisao`, `falhou` ou um 429.
 - **FR-015**: A segmentação DEVE ser determinística (`shared/segmenter.ts`) e agrupar blocos em lotes de até 8 itens e 10.000 caracteres.
 - **FR-016**: A estruturação DEVE validar a saída por schema, exigir grounding (enunciado ≥ 50% e resposta ≥ 35% de trigramas presentes na fonte), tentar reparo 1x por modelo e percorrer a cadeia de modelos gratuitos de `server/ai/models.ts`.
 - **FR-017**: Se todos os modelos falharem num lote, o sistema DEVE gerar rascunhos determinísticos dos blocos com a etiqueta "Processado sem IA — revise". Nenhum bloco detectado pode ser perdido.
-- **FR-018**: A categorização DEVE preferir a taxonomia existente (global + do usuário), gerar uma descrição por card e um resumo por questão, e colocar questões não classificadas num card "Revisar categoria". O processamento DEVE ser em lotes de até 40 questões por chamada.
+- **FR-018**: A categorização DEVE preferir a taxonomia existente (global + do usuário), gerar uma descrição por card e um resumo por questão, e colocar questões não classificadas num card "Revisar categoria". O processamento DEVE ser em lotes de até 20 questões por chamada (na ordem do documento), reaproveitando a grafia dos assuntos já criados nos lotes anteriores e juntando no mesmo card o mesmo Área › Disciplina › Assunto.
 - **FR-019**: A geração de distratores, quando solicitada, DEVE produzir 1 correta + 4 incorretas com explicação, aprovadas por `checkDistractors` (sem duplicatas, sem "todas/nenhuma das anteriores", sem correta desproporcional, sem distrator quase idêntico à correta).
 - **FR-020**: Toda reserva de requisição de IA DEVE respeitar o orçamento global diário (`AI_DAILY_BUDGET`, padrão 900) e o limite por usuário (`AI_USER_DAILY_LIMIT`, padrão 60), registrando cada tentativa em `ai_call`.
 - **FR-021**: Ao esgotar a cota, o sistema DEVE responder 429 com mensagem que sugere o agente externo e manter o checkpoint para retomada.

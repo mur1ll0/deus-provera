@@ -49,7 +49,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T030 Rotas `POST /api/imports` (pdf_ia), `POST /:id/run`, `GET /:id` (`server/routes/imports.ts`)
 - [x] T031 Hook `useImportJob`: cria job, chama `/run` em loop (até `revisao`/`falhou`/429), mostra o nó atual (GET a cada 4 s durante o `/run`), permite retomar o job `processando` salvo no navegador (`src/features/import/useImportJob.ts`, fluxo em `src/features/import/importJob.ts`, tela em `src/features/import/JobProgress.tsx`) + teste de ponta a ponta cliente ↔ rota ↔ grafo (`src/features/import/__tests__/importJob.test.ts`)
 - [x] T032 Com sessão real, o PDF vai pelo job real (`draftsFromServerJob` monta a revisão com os cards e sinalizações da IA); `runMockPipeline`/`classifyQuestion` ficam só no modo protótipo sem API (`src/features/import/ImportPage.tsx`, `src/features/import/drafts.ts`)
-- [ ] T033 Classificar em lotes de até 40 questões e mesclar os grupos por área/disciplina/assunto (`server/ai/pipelines/import-graph.ts` › `classify`)
+- [x] T033 Classificar em lotes de até 20 questões e mesclar os grupos por área/disciplina/assunto (`server/ai/pipelines/import-graph.ts` › `classify`, `mergeClassification`; testes em `server/__tests__/classify.test.ts`)
 - [ ] T034 Dividir no cliente textos > 4 MB em vários jobs e truncar páginas > 60.000 caracteres com aviso (`src/features/import/useImportJob.ts`)
 - [x] T035 Lista "Importações não salvas" (processando ou em revisão) na página de importação (`GET /api/imports`, `server/routes/imports.ts`, `src/features/import/ImportPage.tsx` › `OpenImports`)
 - [x] T036 Mensagem de cota esgotada (429) sugerindo o agente externo, com "Tentar continuar" do checkpoint (`src/features/import/JobProgress.tsx`)

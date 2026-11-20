@@ -20,7 +20,10 @@ import { describeImageBatch, VISION_BATCH, VISION_MAX_ATTEMPTS, type PageImageIn
  *                             │       │
  *                             ├───────┘
  *                             ▼
- *                         classify ──► distractors ◄─┐ (opcional, loop por lote de PERGUNTAS)
+ *                         classify ◄─┐ (loop por lote de 20 questões)
+ *                             ├──────┘
+ *                             ▼
+ *                         (plan) ──► distractors ◄─┐ (opcional, loop por lote de PERGUNTAS)
  *                                          │         │
  *                                          ├─────────┘
  *                                          ▼
@@ -105,6 +108,8 @@ export interface ImportState extends GraphState {
   images?: Record<string, PageImageState>
   blocks: Block[]
   pendingBatches: string[][]
+  /** Lotes de questões a classificar (ids de drafts). Ausente até o nó classify rodar pela 1ª vez. */
+  pendingClassify?: string[][]
   /** Lotes de perguntas para distratores: "questionId#índiceDaPergunta". */
   pendingDistractors: string[][]
   drafts: Record<string, DraftItem>
@@ -184,6 +189,81 @@ function draftFromSegment(b: Block, flags: string[]): DraftItem {
     pagina: b.seg.page,
     flags,
   }
+}
+
+/** Card das questões que a IA não classificou (o usuário escolhe a categoria antes de salvar). */
+export const UNCLASSIFIED_TOPIC = 'Revisar categoria'
+/**
+ * Questões por chamada de classificação. Com 85+ questões numa chamada só, a saída dos modelos gratuitos
+ * vinha parcial (III UNIDADE: 3 de 85 classificadas, 2026-11-20) — o resto caía em "Revisar categoria".
+ */
+export const CLASSIFY_BATCH = 20
+
+/** Fila de lotes de classificação, na ordem do documento (questões vizinhas costumam ser do mesmo assunto). */
+export function planClassifyBatches(drafts: Record<string, DraftItem>, size = CLASSIFY_BATCH): string[][] {
+  return chunkBy(Object.keys(drafts), () => 1, size, size)
+}
+
+/** Rótulo vindo da IA: tira caracteres de outros alfabetos (lixo de tokenização, ex.: "rastrear,従") e pontuação solta no fim. */
+export function cleanLabel(text: string): string {
+  return text
+    .replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Thai}\uFFFD]/gu, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s,;:–—-]+$/u, '')
+    .trim()
+}
+
+const cardKey = (c: Pick<Card, 'area' | 'disciplina' | 'assunto'>) =>
+  [c.area, c.disciplina, c.assunto].map((x) => x.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim()).join('|')
+
+const isUnclassified = (c: Pick<Card, 'area' | 'assunto'>) => c.area === 'Sem área' && c.assunto === UNCLASSIFIED_TOPIC
+
+type Grupo = { area: string; disciplina: string; assunto: string; descricao: string; questoes: { id: string; resumo: string }[] }
+
+/**
+ * Junta o resultado de UM lote aos cards já existentes: mesmo Área › Disciplina › Assunto (sem diferença de
+ * acento/caixa) vira o mesmo card; ids que a IA omitiu, inventou ou repetiu são tratados; as questões do lote
+ * sem grupo vão para "Revisar categoria" (sempre o último card).
+ */
+export function mergeClassification(
+  cards: Card[],
+  drafts: Record<string, DraftItem>,
+  batchIds: string[],
+  grupos: Grupo[],
+  orphanNote = 'Questões que a IA não conseguiu classificar.',
+): { cards: Card[]; drafts: Record<string, DraftItem> } {
+  const inBatch = new Set(batchIds)
+  const placed = new Set<string>()
+  const nextDrafts = { ...drafts }
+  const nextCards = cards.map((c) => ({ ...c, questionIds: [...c.questionIds] }))
+  const find = (k: Pick<Card, 'area' | 'disciplina' | 'assunto'>) => nextCards.find((c) => cardKey(c) === cardKey(k))
+  for (const g of grupos) {
+    const label = { area: cleanLabel(g.area), disciplina: cleanLabel(g.disciplina), assunto: cleanLabel(g.assunto) }
+    if (!label.area || !label.disciplina || !label.assunto || isUnclassified(label)) continue
+    const ids = g.questoes.filter((q, i, all) => inBatch.has(q.id) && !placed.has(q.id) && nextDrafts[q.id] && all.findIndex((x) => x.id === q.id) === i)
+    if (!ids.length) continue
+    let card = find(label)
+    if (!card) {
+      card = { ...label, descricao: cleanLabel(g.descricao), questionIds: [] }
+      nextCards.push(card)
+    }
+    for (const q of ids) {
+      placed.add(q.id)
+      card.questionIds.push(q.id)
+      nextDrafts[q.id] = { ...nextDrafts[q.id], area: card.area, disciplina: card.disciplina, assunto: card.assunto, resumo: q.resumo }
+    }
+  }
+  const orphan = batchIds.filter((id) => !placed.has(id) && nextDrafts[id])
+  if (orphan.length) {
+    let card = nextCards.find(isUnclassified)
+    if (!card) {
+      card = { area: 'Sem área', disciplina: 'Sem disciplina', assunto: UNCLASSIFIED_TOPIC, descricao: orphanNote, questionIds: [] }
+      nextCards.push(card)
+    }
+    card.questionIds.push(...orphan)
+  }
+  nextCards.sort((a, b) => Number(isUnclassified(a)) - Number(isUnclassified(b)))
+  return { cards: nextCards, drafts: nextDrafts }
 }
 
 export const importGraph = new StateGraph<ImportState, ImportCtx>()
@@ -313,35 +393,29 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
   })
   .addConditionalEdges('structure', (s) => (s.pendingBatches.length ? 'structure' : 'classify'))
 
-  /* 5. Categorização em Área › Disciplina › Assunto + descrição dos cards */
+  /* 5. Categorização em Área › Disciplina › Assunto + descrição dos cards (loop por lote de questões) */
   .addNode('classify', async (s, ctx) => {
-    const list = Object.values(s.drafts)
+    // Jobs que chegam aqui pela 1ª vez (ou de antes dos lotes) ainda não têm a fila.
+    const [batchIds = [], ...rest] = s.pendingClassify ?? planClassifyBatches(s.drafts)
+    const batch = batchIds.map((id) => s.drafts[id]).filter(Boolean)
+    if (!batch.length) return { pendingClassify: rest }
     try {
       await ctx.reserveAiRequest()
-      // TODO(spec 002 T033): lotes de 40 questões — 140+ questões numa chamada podem truncar a saída.
       const r = await callStructured({
         task: 'classify',
         userId: ctx.userId,
         deadline: ctx.deadline,
         schema: classificationSchema,
-        system: CLASSIFY_SYSTEM(s.nonce, ctx.taxonomy),
-        prompt: wrapUntrusted(list.map((d) => `id: ${d.id}\n${d.enunciado.slice(0, 400)}\n${d.perguntas.map((p) => p.texto).join(' | ').slice(0, 200)}`).join('\n---\n'), s.nonce),
+        system: CLASSIFY_SYSTEM(s.nonce, ctx.taxonomy, s.cards.filter((c) => c.assunto !== UNCLASSIFIED_TOPIC).map((c) => `${c.area} › ${c.disciplina} › ${c.assunto}`)),
+        prompt: wrapUntrusted(batch.map((d) => `id: ${d.id}\n${d.enunciado.slice(0, 400)}\n${d.perguntas.map((p) => p.texto).join(' | ').slice(0, 200)}`).join('\n---\n'), s.nonce),
       })
-      const drafts = { ...s.drafts }
-      const cards: Card[] = r.value.grupos.map((g) => {
-        for (const q of g.questoes) if (drafts[q.id]) drafts[q.id] = { ...drafts[q.id], area: g.area, disciplina: g.disciplina, assunto: g.assunto, resumo: q.resumo }
-        return { area: g.area, disciplina: g.disciplina, assunto: g.assunto, descricao: g.descricao, questionIds: g.questoes.map((q) => q.id).filter((id) => drafts[id]) }
-      })
-      const placed = new Set(cards.flatMap((c) => c.questionIds))
-      const orphan = list.filter((d) => !placed.has(d.id)).map((d) => d.id)
-      if (orphan.length) cards.push({ area: 'Sem área', disciplina: 'Sem disciplina', assunto: 'Revisar categoria', descricao: 'Questões que a IA não conseguiu classificar.', questionIds: orphan })
-      return { drafts, cards }
+      return { ...mergeClassification(s.cards, s.drafts, batchIds, r.value.grupos), pendingClassify: rest }
     } catch (err) {
       if (!(err instanceof AiUnavailableError)) throw err
-      return { cards: [{ area: 'Sem área', disciplina: 'Sem disciplina', assunto: 'Revisar categoria', descricao: 'Classificação automática indisponível — organize manualmente.', questionIds: list.map((d) => d.id) }] }
+      return { ...mergeClassification(s.cards, s.drafts, batchIds, [], 'Classificação automática indisponível — organize manualmente.'), pendingClassify: rest }
     }
   })
-  .addConditionalEdges('classify', (s) => (s.options.generateDistractors ? 'plan-distractors' : 'validate'))
+  .addConditionalEdges('classify', (s) => (s.pendingClassify?.length ? 'classify' : s.options.generateDistractors ? 'plan-distractors' : 'validate'))
 
   .addNode('plan-distractors', async (s) => {
     const targets = Object.values(s.drafts).flatMap((d) => d.perguntas.map((p, i) => ({ d, p, key: `${d.id}#${i}` }))).filter(({ p }) => p.tipo === 'discursiva' && p.resposta_esperada && !p.alternativas?.length)

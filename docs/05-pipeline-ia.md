@@ -22,7 +22,7 @@ Fonte: API pública de modelos do OpenRouter (`/api/v1/models`, filtro preço 0)
 | Tarefa | Cadeia (ordem de preferência) | Por quê |
 |---|---|---|
 | `structure` (texto → JSON de questões) | `baidu/ernie-5.5-flash-preview:free` → `inclusionai/ling-3.2-flash:free` → `nvidia/nemotron-3.5-super-vl:free` → `openrouter/free` | Suportam `json_schema` estrito, contexto ≥ 1 M tokens |
-| `classify` (Área › Disciplina › Assunto + resumo) | `inclusionai/ling-3.2-flash:free` → `baidu/ernie-5.5-flash-preview:free` → `openrouter/free` | Rápido, saída estruturada |
+| `classify` (Área › Disciplina › Assunto + resumo, lotes de 20 questões) | `baidu/ernie-5.5-flash-preview:free` → `inclusionai/ling-3.2-flash:free` → `openrouter/free` | Rápido, saída estruturada. Lotes de 20 desde 2026-11-20: numa chamada só, 85 questões voltavam com 3 classificadas |
 | `distractors` (alternativas incorretas) | `baidu/ernie-5.5-flash-preview:free` → `nvidia/nemotron-3.5-super-vl:free` → `openrouter/free` | Raciocínio + JSON; temperatura 0,7 |
 | `explain` (dica / por que certa-errada) | `nvidia/nemotron-3-ultra-550b-a55b:free` → `baidu/ernie-5.5-flash-preview:free` → `openrouter/free` | Melhor raciocínio livre (sem `response_format`: pedimos JSON simples e validamos) |
 | `grade` (corrigir discursiva) | `baidu/ernie-5.5-flash-preview:free` → `inclusionai/ling-3.2-flash:free` → `openrouter/free` | JSON estrito, temperatura 0 |
@@ -53,7 +53,7 @@ A lista gratuita muda. `server/ai/eval/` terá ~30 casos reais (PT-BR, medicina 
 
 > **Medido em 2026-11-20:** os modelos gratuitos têm raciocínio obrigatório (~4,8 mil tokens por questão antes do JSON). Lotes de 8 voltavam vazios (`finish_reason: length`); agora são **lotes de ≤ 3 questões** com até 24 mil tokens de saída, e cada passo respeita um **prazo** (a cadeia de fallback não passa dos 240 s). Os números abaixo eram a estimativa original.
 
-**Custo estimado por importação** (PDF de 85 páginas ≈ 140 itens): ~18 chamadas `structure` (lotes de 8) + 1–3 `classify` + até 24 `distractors` (lotes de 6, opcional) ≈ **20–45 chamadas** → ~20–45 PDFs/dia no total. Daí:
+**Custo estimado por importação** (PDF de 85 páginas ≈ 140 itens): ~18 chamadas `structure` (lotes de 8) + 1 `classify` a cada 20 questões + até 24 `distractors` (lotes de 6, opcional) ≈ **20–45 chamadas** → ~20–45 PDFs/dia no total. Daí:
 
 - `AI_DAILY_BUDGET=900` (reserva ~10% para margem) e `AI_USER_DAILY_LIMIT=200` por usuário (um PDF de ~140 questões usa ~60–70 requisições com visão).
 - Explicações são **cacheadas por questão** (`ai_cache`) e servem a todos os usuários: uma questão pública muito usada custa 1 chamada, não N.
@@ -98,6 +98,7 @@ flowchart LR
   segment["segment<br/>[[imagem]] → [Imagem p. N: …]<br/>regex, lotes de 3"] --> structure
   structure[structure<br/>LLM + grounding<br/>fallback: bloco cru] -->|há lotes| structure
   structure -->|acabou| classify
+  classify -->|lote de 20| classify
   classify[classify<br/>Área › Disciplina › Assunto<br/>+ descrição dos cards] -->|distratores desligados| validate
   classify -->|ligados| plan[plan-distractors]
   plan --> distractors
