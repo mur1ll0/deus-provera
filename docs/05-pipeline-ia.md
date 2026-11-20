@@ -131,7 +131,7 @@ Ameaças consideradas: instruções escondidas no PDF/JSON ("ignore as instruç�
 | 4. Schema estrito + zod | `schemas.ts` | Saída fora do formato é descartada; limites de tamanho por campo |
 | 5. Grounding/qualidade | `quality.ts` | Conteúdo inventado ou manipulado não passa |
 | 6. Classificador LLM | nó `guard` | Só para trechos de risco **alto** (economiza cota): confirma e registra o motivo |
-| 7. Guardrail do OpenRouter | painel do OpenRouter (conta) | Detecção de prompt injection gratuita, ativada na chave em modo **flag** |
+| 7. Guardrail do OpenRouter | painel do OpenRouter (Workspaces › Default › Guardrails) | Detecção de prompt injection por regex, **ativa desde 2026-11-20** na chave `deus-provera` em modo **Flag** (todas as mensagens). Se um dia for trocado para *Block*, o OpenRouter responde **403 "Request blocked"**: `server/ai/client.ts` classifica como `blocked` (`AiGuardrailBlockedError`, subclasse de `AiUnavailableError`) — o conteúdo segue o caminho sem IA (rascunho sinalizado / 503 com alternativa), sem ser confundido com chave inválida |
 | 8. Renderização segura | React | Saída de IA sempre como texto (sem `dangerouslySetInnerHTML`) |
 | 9. Regras no servidor | rotas | Gabarito, prazo, correção e pontos nunca dependem do cliente nem do LLM sem validação (nota da IA é número 0–1 validado; pesos aplicados no servidor) |
 

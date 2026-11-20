@@ -37,6 +37,19 @@ export class AiUnavailableError extends Error {
 }
 
 /**
+ * Conteúdo barrado pelo Guardrail do OpenRouter (detecção de prompt injection — HTTP 403 "Request blocked").
+ * Não é problema de chave: os fluxos tratam como IA indisponível PARA ESTE conteúdo (rascunho sem IA sinalizado,
+ * 503 com alternativa no simulado). Outro modelo não adianta — o guardrail vale para a chave toda.
+ */
+export class AiGuardrailBlockedError extends AiUnavailableError {
+  readonly blocked = true
+  constructor(task: AiTask, attempts: AttemptLog[]) {
+    super(task, attempts)
+    this.message = `Conteúdo barrado pelo guardrail do OpenRouter (possível prompt injection) na tarefa "${task}".`
+  }
+}
+
+/**
  * Erro de CONFIGURAÇÃO/CONTA (chave inválida, sem saldo): trocar de modelo não resolve,
  * então a cadeia de fallback é interrompida e a mensagem orienta o que fazer.
  */
@@ -57,7 +70,7 @@ export class AiConfigError extends Error {
 export interface AttemptLog {
   model: string
   ok: boolean
-  errorKind?: 'rate_limit' | 'timeout' | 'invalid_output' | 'quality' | 'provider' | 'circuit_open' | 'not_found' | 'auth' | 'credits'
+  errorKind?: 'rate_limit' | 'timeout' | 'invalid_output' | 'quality' | 'provider' | 'circuit_open' | 'not_found' | 'auth' | 'credits' | 'blocked'
   /** Status HTTP devolvido pelo OpenRouter, quando houver. */
   status?: number
   /** Mensagem resumida do erro (sem dados do usuário). */
@@ -115,8 +128,10 @@ function statusOf(err: unknown): number | undefined {
   return undefined
 }
 
-function classify(err: unknown): { kind: NonNullable<AttemptLog['errorKind']>; status?: number } {
+export function classify(err: unknown): { kind: NonNullable<AttemptLog['errorKind']>; status?: number } {
   const status = statusOf(err)
+  const text = `${String((err as Error)?.message ?? err)} ${JSON.stringify((err as { responseBody?: unknown })?.responseBody ?? '')}`.toLowerCase()
+  if (status === 403 && /request blocked|prompt injection|guardrail/.test(text)) return { kind: 'blocked', status }
   if (status === 401 || status === 403) return { kind: 'auth', status }
   if (status === 402) return { kind: 'credits', status }
   if (status === 404) return { kind: 'not_found', status } // modelo saiu do ar / slug inválido
@@ -211,6 +226,11 @@ export async function callStructured<T>(call: StructuredCall<T>): Promise<Struct
       } catch (err) {
         const { kind, status } = classify(err)
         log({ model: modelId, ok: false, errorKind: kind, status, error: shortError(err), latencyMs: Date.now() - started })
+        // Guardrail da chave barrou o conteúdo: vale para qualquer modelo — encerra sem derrubar o fluxo.
+        if (kind === 'blocked') {
+          await flush()
+          throw new AiGuardrailBlockedError(call.task, attempts)
+        }
         // Chave inválida ou sem saldo: nenhum outro modelo vai funcionar — para tudo com mensagem clara.
         if (kind === 'auth' || kind === 'credits') {
           await flush()

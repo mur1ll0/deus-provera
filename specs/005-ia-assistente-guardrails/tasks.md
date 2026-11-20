@@ -7,7 +7,7 @@
 - [x] T001 Dependências `ai@7`, `@openrouter/ai-sdk-provider@3`, `zod@4` em `package.json`
 - [x] T002 Variáveis `OPENROUTER_API_KEY`, `AI_DAILY_BUDGET`, `AI_USER_DAILY_LIMIT` em `server/env.ts` e `.env.example`
 - [x] T003 Tabelas `ai_cache` e `ai_call` em `server/db/schema.ts`
-- [ ] T004 Operacional: comprar US$10 de créditos no OpenRouter (1000 req/dia) e ativar o Guardrail de prompt injection (flag) na chave. Registrar em `docs/03-requisitos-tecnicos.md` — créditos de US$10 comprados (2026-11-20; `npm run ai:ping` ok). Falta ativar o Guardrail "Prompt injection" (flag) no painel do OpenRouter
+- [x] T004 Operacional: comprar US$10 de créditos no OpenRouter (1000 req/dia) e ativar o Guardrail de prompt injection (flag) na chave. Registrar em `docs/03-requisitos-tecnicos.md` — créditos de US$10 comprados (2026-11-20; `npm run ai:ping` ok). Guardrail "Deus Proverá — prompt injection (flag)" criado e atribuído à chave `deus-provera` (Flag, todas as mensagens); gasto em modelos no mês: US$ 0,00
 
 ## Fase B — Fundação (Fase 1 do roadmap)
 

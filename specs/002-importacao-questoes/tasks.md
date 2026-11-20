@@ -11,7 +11,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T001 Instalar `pdfjs-dist`, `@dnd-kit/core`, `zod`, `ai`, `@openrouter/ai-sdk-provider` (`package.json`)
 - [x] T002 Worker do pdf.js via `?url` e import dinâmico (`src/features/import/pdfExtract.ts`, `src/features/import/ImportPage.tsx`)
 - [x] T003 `maxDuration: 300` para `api/index.ts` (`vercel.json`)
-- [ ] T004 Criar chave OpenRouter, comprar US$10 de créditos (1000 req/dia), ativar o Guardrail "Prompt injection" em modo flag e configurar `OPENROUTER_*` e `AI_*` na Vercel (`.env.example` já documenta)
+- [x] T004 Criar chave OpenRouter, comprar US$10 de créditos (1000 req/dia), ativar o Guardrail "Prompt injection" em modo flag e configurar `OPENROUTER_*` e `AI_*` na Vercel (`.env.example` já documenta) — feito em 2026-11-20: US$10 de créditos, guardrail de prompt injection em modo Flag na chave `deus-provera`, `OPENROUTER_*` na Vercel (`AI_*` usam os padrões: 900/dia global, 200/dia por usuário)
 
 ## Fase 2 — Fundação (compartilhado + pipeline)
 
