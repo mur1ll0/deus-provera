@@ -54,6 +54,16 @@ Substitui o v1 (uma entrada por subitem com `contexto`/`caso_id`), que **não é
 | `explicacao` | string | não |
 | `gerada_por_ia` | boolean | não |
 
+## Tabelas, POP-Q, gráficos e fórmulas no texto
+
+`enunciado`, `perguntas[].texto` e `resposta_esperada` são texto puro, mas podem conter **tabelas Markdown** (linhas seguidas que começam e terminam com `|`, separadas por `\n`). A tela desenha a tabela (`shared/rich-text.ts` + `src/components/RichText.tsx`); sem tela, o texto continua legível. Não há HTML.
+
+- Linha `|---|---|` logo após a 1ª linha → a 1ª linha é cabeçalho. Sem ela, todas as linhas são corpo (útil para a grade POP-Q).
+- `**texto**` ocupando a célula inteira → célula em destaque (rótulo).
+- Uma linha isolada com `|` continua sendo texto.
+- POP-Q: grade 3 × 3 do original em 6 linhas (`| **Aa** | **Ba** | **C** |`, valores, `| **HG** | **CP** | **CVT** |`, valores, `| **Ap** | **Bp** | **D** |`, valores).
+- Gráfico: valores lidos em tabela no texto + descrição em `descricao_imagem`. Fórmula: uma linha com símbolos Unicode (sem LaTeX).
+
 ## Tolerâncias do leitor (`parseImportText`)
 
 - Aceita JSON puro **ou** dentro de blocos ` ```json … ``` ` (resposta típica de chatbot).

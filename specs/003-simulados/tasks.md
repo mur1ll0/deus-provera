@@ -56,6 +56,7 @@
 
 - [x] T033 [P] Acessibilidade: `aria-live` no cronômetro (avisos em 5 min e 1 min), foco ao trocar de questão, contraste AA — aviso falado aos 5 e 1 min (`aria-live`), `role="timer"`, foco na questão ao navegar
 - [x] T034 [P] Teste E2E (Playwright) prova completa: criar → responder → expirar → resultado — `e2e/simulado.spec.ts` (`npm run test:e2e`): prova com 1 min, responde por teclado, tempo expira → resultado → histórico; treino em 375 px
+- [x] T037 Tabelas no texto da questão (FR-020a): `parseRichText` (`shared/rich-text.ts`, testes em `shared/__tests__/rich-text.test.ts`) + `RichText` (`src/components/RichText.tsx`) no executor, no resultado e na prévia do banco de questões; prompt do agente externo pede tabelas Markdown, grade POP-Q, valores de gráficos e fórmulas em Unicode (`shared/prompts/external-agent.ts`)
 - [ ] T035 [P] Métricas: tempo de criação do simulado (SC-003) no log estruturado
 - [x] T036 Remover `src/mocks/*` do fluxo de simulados (manter só para Storybook/demos) — o store mock segue só no modo protótipo (dev sem API), atrás de `localBackend`
 

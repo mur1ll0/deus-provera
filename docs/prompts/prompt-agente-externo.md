@@ -36,13 +36,25 @@ f) Nunca transcreva como questão o índice, o sumário, a apresentação, as in
 g) Em "origem"."observacoes", resuma em uma frase o que você aproveitou (ex.: "Assuntos conforme a lista de questões e temas da p. 2").
 
 REGRAS
-1. Preserve o texto original do enunciado, das perguntas e das respostas. Corrija apenas quebras de linha/hifenização e erros óbvios de OCR. NÃO invente respostas.
+1. Preserve o texto original do enunciado, das perguntas e das respostas. Corrija apenas quebras de linha/hifenização no meio de frases e erros óbvios de OCR. Mantenha as quebras de linha de tabelas e listas (use "\n" no JSON). NÃO invente respostas.
 2. "tipo" de cada pergunta: "objetiva" se o material traz alternativas (A, B, C…); caso contrário "discursiva".
 3. Objetivas: liste as alternativas em "alternativas", marcando exatamente uma com "correta": true. Comentário/justificativa vai em "explicacao".
 4. Discursivas: resposta completa em "resposta_esperada" e de 3 a 6 "pontos_chave" curtos (o que um corretor exigiria), derivados da resposta.
 5. RECOMENDADO: para cada pergunta discursiva, gere também 5 alternativas em "alternativas" (1 correta = síntese fiel da resposta esperada; 4 incorretas plausíveis, de tamanho parecido, cada uma com "explicacao" de por que está errada), todas com "gerada_por_ia": true. Proibido "todas/nenhuma das anteriores".
 6. Classifique cada questão: "area" (ex.: Medicina, Matemática, Direito), "disciplina" (ex.: Cardiologia, Cálculo) e "assunto". Se o material indicar o tema, use-o (ver INFORMAÇÕES DO MATERIAL). Caso contrário, o "assunto" deve ser AMPLO — o tema da aula/capítulo (ex.: "Hipertensão arterial", "Diabetes mellitus", "Derivadas"), NÃO o tema específico da pergunta — e IDÊNTICO (mesma grafia) para todas as questões do mesmo tema. Em "rotulo" coloque o rótulo original (ex.: "QUESTÃO 8").
-7. Se a questão depende de uma imagem (esquema, gráfico, tabela, foto), transcreva no enunciado os dados necessários, marque "tem_imagem": true e descreva a imagem em "descricao_imagem".
+7. Conteúdo que não é texto corrido NÃO pode ser perdido. Reproduza-o no próprio texto (enunciado, pergunta ou resposta, onde aparece no PDF). O sistema desenha na tela, como tabela de verdade, toda sequência de linhas no formato abaixo:
+   a) Tabela (quadro de exames, POP-Q, comparativos): tabela Markdown, uma linha por linha do original, células separadas por "|", cada linha começando e terminando com "|" e linhas separadas por "\n". Rótulos em **negrito**. Se a tabela tem cabeçalho, ponha "|---|---|" (uma coluna por "---") logo depois dele. Célula vazia no original: "—".
+   b) POP-Q: sempre a grade 3 × 3 do original, em 6 linhas (rótulos e valores):
+      | **Aa** | **Ba** | **C** |
+      | +1 cm | +3 cm | -6 cm |
+      | **HG** | **CP** | **CVT** |
+      | 4 | 3 | 8 |
+      | **Ap** | **Bp** | **D** |
+      | -3 cm | -3 cm | -8 cm |
+   c) Gráfico (barras, linhas, dispersão, curva de uma função): descreva tipo, eixos, unidades e tendência em "descricao_imagem" e transcreva no enunciado, em tabela Markdown, os valores que dá para ler — ex.: "| **Mês** | **Hb (g/dL)** |" ou "| **x** | **f(x)** |", uma linha por ponto ou barra (marque "aprox." quando estimar).
+   d) Fórmula, equação ou função: uma linha de texto com símbolos Unicode (², ³, √, ±, ≤, ≥, ×, ÷, Δ, π, →), frações com "/" e parênteses. Ex.: "IMC = peso (kg) / altura² (m²)", "f(x) = 2x² − 3x + 1". Não use LaTeX.
+   e) Esquema, fluxograma, foto: transcreva todo texto e dado útil (fluxograma como "Etapa A → Etapa B → Etapa C") e descreva a imagem em "descricao_imagem".
+   Marque "tem_imagem": true quando, no PDF, a informação estava numa imagem (foto, gráfico, esquema ou tabela escaneada).
 8. "dificuldade": "facil", "media" ou "dificil" (sua estimativa). "pagina": página onde a questão começa.
 9. Ignore cabeçalhos, nomes de professores/alunos, rodapés e numeração de páginas.
 10. Se uma pergunta não tiver resposta no PDF, ainda assim inclua-a com "resposta_esperada": null — ela será sinalizada para revisão.
@@ -61,7 +73,7 @@ Responda SOMENTE com um bloco ```json válido, sem comentários, seguindo exatam
       "disciplina": "Cardiologia",
       "assunto": "Hipertensão arterial",
       "rotulo": "QUESTÃO 8",
-      "enunciado": "Carlos tem 52 anos, é sedentário e assintomático. Em duas consultas, a pressão arterial foi de 150/95 mmHg. (…) Responda:",
+      "enunciado": "Carlos tem 52 anos, é sedentário e assintomático. Pressão arterial em duas consultas:\n| **Consulta** | **PA (mmHg)** |\n|---|---|\n| 1ª | 150/95 |\n| 2ª | 148/92 |\n(…) Responda:",
       "perguntas": [
         {
           "rotulo": "a",

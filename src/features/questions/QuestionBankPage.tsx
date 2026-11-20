@@ -8,6 +8,7 @@ import type { QuestionInput } from '@shared/schemas/question'
 import { hasValidAlternatives } from '@shared/simulado'
 import { useAuth } from '@/app/auth-context'
 import { Badge, Button, Card, EmptyState, Field, inputClass, Modal, PageHeader, Segmented } from '@/components/ui'
+import { RichText } from '@/components/RichText'
 import { api, unwrap } from '@/lib/api'
 import { difficultyLabel, LETTERS } from '@/lib/format'
 import { QuestionEditor } from './QuestionEditor'
@@ -254,13 +255,14 @@ export function QuestionBankPage() {
             {preview.topic && ` · ${preview.topic}`}
           </p>
           <p className="mt-3 text-xs font-bold uppercase tracking-wide text-muted">Enunciado</p>
-          <p className="mt-1 whitespace-pre-line rounded-xl bg-brand-50/60 p-3 text-sm">{preview.stem}</p>
+          <RichText text={preview.stem} className="mt-1 rounded-xl bg-brand-50/60 p-3 text-sm" />
           {preview.items.map((it, j) => (
             <div key={it.id} className="mt-4">
               {preview.items.length > 1 && (
-                <p className="font-display font-semibold">
-                  {it.label ?? j + 1}) {it.prompt}
-                </p>
+                <div className="flex gap-1 font-display font-semibold">
+                  <span>{it.label ?? j + 1})</span>
+                  <RichText text={it.prompt} className="min-w-0 flex-1" />
+                </div>
               )}
               {!!it.alternatives?.length && (
                 <ul className="mt-2 space-y-1.5 text-sm">
@@ -275,7 +277,7 @@ export function QuestionBankPage() {
               {it.expectedAnswer && (
                 <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm">
                   <p className="text-xs font-bold uppercase text-emerald-700">Resposta esperada</p>
-                  <p className="mt-1 whitespace-pre-line">{it.expectedAnswer}</p>
+                  <RichText text={it.expectedAnswer} className="mt-1" />
                   {!!it.keyPoints?.length && (
                     <ul className="mt-2 list-disc pl-5 text-xs text-emerald-800">
                       {it.keyPoints.map((k) => (

@@ -124,6 +124,7 @@ Como estudante, quero priorizar as questões que errei, misturar as minhas quest
 - **FR-018**: O executor DEVE oferecer um navegador de questões com estados (atual, respondida, marcada para revisar e, no treino imediato, certa/errada).
 - **FR-019**: O executor DEVE permitir marcar a questão para revisar, riscar alternativas e usar os atalhos A–E (escolher) e ←/→ (navegar), ignorando os atalhos quando o foco está num campo de texto.
 - **FR-020**: O executor DEVE exibir o caso/texto-base e a descrição da imagem (se houver) acima do enunciado e manter os subitens do mesmo caso juntos e em ordem.
+- **FR-020a** (2026-11-20): Enunciado, pergunta e resposta esperada DEVEM preservar quebras de linha e desenhar as tabelas Markdown do texto (POP-Q, quadros de exames, dados de gráficos), sem HTML e sem rolagem horizontal da página em 375 px (a tabela rola dentro da própria caixa). Formato no [contrato de importação v2](../002-importacao-questoes/contracts/import-format-v2.md#tabelas-pop-q-gráficos-e-fórmulas-no-texto).
 - **FR-021**: O executor DEVE pedir confirmação antes de finalizar (informando quantas questões estão em branco) e antes de sair sem finalizar.
 
 **Resultado**

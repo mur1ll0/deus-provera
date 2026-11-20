@@ -8,6 +8,7 @@ import { useAuth } from '@/app/auth-context'
 import { FullScreen } from '@/app/RequireAuth'
 import { Logo } from '@/components/Logo'
 import { Badge, Button, Card, DemoTag, EmptyState, inputClass, Modal } from '@/components/ui'
+import { RichText } from '@/components/RichText'
 import { formatDuration, LETTERS } from '@/lib/format'
 import type { AiExplanation } from '@/mocks/ai'
 import { itemLabel } from '@/mocks/model'
@@ -288,7 +289,7 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
               {q.sourceLabel && <Badge tone="neutral">{q.sourceLabel}</Badge>}
               {q.items.length > 1 && <Badge tone="blue">{q.items.length} perguntas</Badge>}
             </div>
-            <p className="whitespace-pre-line text-[15px] leading-relaxed">{q.stem}</p>
+            <RichText text={q.stem} className="text-[15px] leading-relaxed" />
             {q.hasImage && q.imageDescription && (
               <div className="mt-4 flex gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
                 <ImageIcon size={18} className="mt-0.5 shrink-0" />
@@ -534,11 +535,13 @@ function ItemView({
   return (
     <section className={clsx(multi && 'rounded-2xl border border-line p-4')}>
       {multi && (
-        <p className="mb-3 font-display text-base font-semibold leading-snug">
-          <span className="mr-1.5 inline-flex size-7 items-center justify-center rounded-full bg-brand-600 text-sm text-white">{item.label ?? index + 1}</span>
-          {item.prompt}
-          {item.type === 'discursiva' && kind === 'objetiva' && <Badge tone="gold" className="ml-2 align-middle">alternativas geradas por IA</Badge>}
-        </p>
+        <div className="mb-3 flex items-start gap-1.5 font-display text-base font-semibold leading-snug">
+          <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm text-white">{item.label ?? index + 1}</span>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <RichText text={item.prompt} />
+            {item.type === 'discursiva' && kind === 'objetiva' && <Badge tone="gold" className="mt-1">alternativas geradas por IA</Badge>}
+          </div>
+        </div>
       )}
       {!multi && item.type === 'discursiva' && kind === 'objetiva' && <Badge tone="gold" className="mb-2">alternativas geradas por IA</Badge>}
 
@@ -625,7 +628,7 @@ function ItemView({
           {revealNow && showExpected && (
             <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Resposta esperada</p>
-              <p className="mt-1 whitespace-pre-line text-sm leading-relaxed">{item.expectedAnswer}</p>
+              <RichText text={item.expectedAnswer} className="mt-1 text-sm leading-relaxed" />
               {(item.keyPoints?.length ?? 0) > 0 && (
                 <>
                   <p className="mt-4 text-xs font-bold uppercase tracking-wide text-emerald-700">Pontos de acerto — marque o que você citou</p>

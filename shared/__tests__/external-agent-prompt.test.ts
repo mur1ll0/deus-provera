@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EXTERNAL_AGENT_PROMPT } from '../prompts/external-agent'
+import { hasRichTable, parseRichText } from '../rich-text'
 import { parseImportText } from '../schemas/import'
 
 describe('prompt do agente externo', () => {
@@ -19,5 +20,13 @@ describe('prompt do agente externo', () => {
     const r = parseImportText(example)
     expect(r.errors).toEqual([])
     expect(r.data?.origem?.observacoes).toBeTruthy()
+    // o exemplo mostra uma tabela Markdown dentro do enunciado ("\n" escapado no JSON)
+    expect(hasRichTable(r.data?.questoes[0].enunciado)).toBe(true)
+  })
+
+  it('a grade POP-Q do prompt vira uma tabela 3 × 6 na tela', () => {
+    const grid = EXTERNAL_AGENT_PROMPT.split('\n').filter((l) => /^\s+\| /.test(l)).join('\n')
+    const table = parseRichText(grid).find((b) => b.kind === 'table')
+    expect(table && table.kind === 'table' && table.rows.map((r) => r.length)).toEqual([3, 3, 3, 3, 3, 3])
   })
 })

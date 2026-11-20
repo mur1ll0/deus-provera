@@ -9,6 +9,7 @@ import { presentAs } from '@shared/simulado'
 import { useAuth } from '@/app/auth-context'
 import { FullScreen } from '@/app/RequireAuth'
 import { Badge, Button, Card, DemoTag, EmptyState, PageHeader, ProgressRing } from '@/components/ui'
+import { RichText } from '@/components/RichText'
 import { ApiError } from '@/lib/api'
 import { formatDuration, LETTERS, pct } from '@/lib/format'
 import { aiExplain, aiGradeDiscursive, type AiExplanation } from '@/mocks/ai'
@@ -245,7 +246,7 @@ function ResultBody({ data }: { data: ResultData }) {
                   </button>
                   {isOpen && (
                     <div className="space-y-4 px-2 pb-4 text-sm sm:pl-13">
-                      <p className="whitespace-pre-line rounded-xl bg-brand-50/60 p-3">{q.stem}</p>
+                      <RichText text={q.stem} className="rounded-xl bg-brand-50/60 p-3" />
                       {q.items.map((it, j) => (
                         <ItemReview key={it.id} item={it} index={j} multi={q.items.length > 1} topic={q.topic} kind={data.kindOf(it)} a={ans(it)} data={data} />
                       ))}
@@ -357,12 +358,13 @@ function ItemReview({
   return (
     <div className={clsx(multi && 'rounded-xl border border-line p-3')}>
       {multi && (
-        <p className="mb-2 flex items-start gap-2 font-bold">
+        <div className="mb-2 flex items-start gap-2 font-bold">
           <StatusDot status={status} />
-          <span className="pt-1">
-            {item.label ?? index + 1}) {item.prompt}
-          </span>
-        </p>
+          <div className="flex min-w-0 flex-1 gap-1 pt-1">
+            <span>{item.label ?? index + 1})</span>
+            <RichText text={item.prompt} className="min-w-0 flex-1" />
+          </div>
+        </div>
       )}
       {kind === 'objetiva' ? (
         <>
@@ -409,7 +411,7 @@ function ItemReview({
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
             <p className="text-xs font-bold uppercase text-emerald-700">Resposta esperada</p>
-            <p className="mt-1 whitespace-pre-line">{item.expectedAnswer}</p>
+            <RichText text={item.expectedAnswer} className="mt-1" />
             {(item.keyPoints?.length ?? 0) > 0 && (
               <>
                 <p className="mt-3 text-xs font-bold uppercase text-emerald-700">Pontos de acerto</p>
