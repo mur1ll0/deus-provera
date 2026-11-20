@@ -54,6 +54,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T033 Classificar em lotes de até 20 questões e mesclar os grupos por área/disciplina/assunto (`server/ai/pipelines/import-graph.ts` › `classify`, `mergeClassification`; testes em `server/__tests__/classify.test.ts`)
 - [ ] T034 Dividir no cliente textos > 4 MB em vários jobs e truncar páginas > 60.000 caracteres com aviso (`src/features/import/useImportJob.ts`) — parcial (2026-11-20): `pdfJobPayload()` já corta em 60.000 caracteres por página, mas sem aviso; a divisão em vários jobs não existe
 - [x] T035 Lista "Importações não salvas" (processando ou em revisão) na página de importação (`GET /api/imports`, `server/routes/imports.ts`, `src/features/import/ImportPage.tsx` › `OpenImports`)
+- [x] T063 **Remover** uma importação não salva pela lista (T035): lixeira com confirmação na linha; `DELETE /api/imports/:id` marca `cancelada` e apaga o `state` (idempotente, 409 se já salva); `/run` e `/images` em curso não regravam um job removido (`server/routes/imports.ts`, `src/features/import/ImportPage.tsx` › `OpenImports`; teste em `server/__tests__/import-routes.db.test.ts`; contrato em [contracts/api-imports.md](./contracts/api-imports.md))
 - [x] T036 Mensagem de cota esgotada (429) sugerindo o agente externo, com "Tentar continuar" do checkpoint (`src/features/import/JobProgress.tsx`)
 - [ ] T037 Conjunto de avaliação PT-BR (20 blocos dos PDFs de exemplo com gabarito estruturado) + script `npm run ai:eval` (`server/ai/eval/`, `package.json`) para SC-002/SC-004
 

@@ -292,10 +292,21 @@ interface OpenJob {
  * voltar à revisão depois de recarregar a página ou trocar de dispositivo.
  */
 function OpenImports({ hide, onOpen }: { hide?: string; onOpen: (job: OpenJob) => void }) {
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState<string | null>(null)
   const q = useQuery({
     queryKey: ['imports', 'abertas'],
     queryFn: async () => (await unwrap(apiFetch('/api/imports'))) as { jobs: (Omit<OpenJob, 'status'> & { status: string })[] },
     staleTime: 10_000,
+  })
+  // Remover (T063): o servidor marca como cancelada e apaga o conteúdo; some da lista na hora.
+  const remove = useMutation({
+    mutationFn: (id: string) => removeImport(id),
+    onSuccess: (_, id) => {
+      setConfirming(null)
+      queryClient.setQueryData<{ jobs: { id: string }[] }>(['imports', 'abertas'], (d) => (d ? { ...d, jobs: d.jobs.filter((j) => j.id !== id) } : d))
+      void queryClient.invalidateQueries({ queryKey: ['imports'] })
+    },
   })
   const jobs = (q.data?.jobs ?? []).filter(
     (j): j is OpenJob => (j.status === 'processando' || j.status === 'revisao') && j.source !== 'manual' && j.id !== hide,
@@ -307,21 +318,52 @@ function OpenImports({ hide, onOpen }: { hide?: string; onOpen: (job: OpenJob) =
         Importações não salvas
       </h2>
       <ul className="space-y-2">
-        {jobs.slice(0, 5).map((j) => (
-          <li key={j.id} className="flex flex-wrap items-center gap-2 text-sm">
-            {j.status === 'processando' ? <Loader2 size={16} className="shrink-0 text-brand-600" /> : <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />}
-            <span className="min-w-0 flex-1 truncate">
-              <b>{j.fileName || (j.source === 'agente_externo' ? 'JSON do agente' : 'PDF')}</b>
-              <span className="text-muted"> · {j.status === 'processando' ? 'processando' : 'pronta para revisar'} · {new Date(j.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
-            </span>
-            <Button size="sm" variant="secondary" onClick={() => onOpen(j)}>
-              {j.status === 'processando' ? 'Continuar' : 'Revisar'}
-            </Button>
-          </li>
-        ))}
+        {jobs.slice(0, 5).map((j) => {
+          const name = j.fileName || (j.source === 'agente_externo' ? 'JSON do agente' : 'PDF')
+          const removing = remove.isPending && remove.variables === j.id
+          return (
+            <li key={j.id} className="flex flex-wrap items-center gap-2 text-sm">
+              {j.status === 'processando' ? <Loader2 size={16} className="shrink-0 text-brand-600" /> : <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />}
+              <span className="min-w-0 flex-1 truncate">
+                <b>{name}</b>
+                <span className="text-muted"> · {j.status === 'processando' ? 'processando' : 'pronta para revisar'} · {new Date(j.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+              </span>
+              {confirming === j.id ? (
+                <span className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto" role="group" aria-label={`Confirmar remoção de ${name}`}>
+                  <span className="text-xs text-muted">Remover? O resultado da IA e suas edições serão apagados.</span>
+                  <Button size="sm" variant="danger" disabled={removing} onClick={() => remove.mutate(j.id)}>
+                    {removing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Remover
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={removing} onClick={() => setConfirming(null)}>
+                    Cancelar
+                  </Button>
+                </span>
+              ) : (
+                <>
+                  <Button size="sm" variant="secondary" onClick={() => onOpen(j)}>
+                    {j.status === 'processando' ? 'Continuar' : 'Revisar'}
+                  </Button>
+                  <Button size="sm" variant="ghost" aria-label={`Remover ${name}`} title="Remover" onClick={() => setConfirming(j.id)}>
+                    <Trash2 size={16} />
+                  </Button>
+                </>
+              )}
+            </li>
+          )
+        })}
       </ul>
+      {remove.error && (
+        <p role="alert" className="mt-2 text-xs text-rose-600">
+          {remove.error.message}
+        </p>
+      )}
     </section>
   )
+}
+
+/** DELETE /api/imports/:id (T063): descarta uma importação não salva. */
+async function removeImport(id: string) {
+  await unwrap(apiFetch(`/api/imports/${encodeURIComponent(id)}`, { method: 'DELETE' }))
 }
 
 function Stepper({ step }: { step: Step }) {

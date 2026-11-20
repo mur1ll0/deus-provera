@@ -248,7 +248,21 @@ Regras por questão: as de `questionInput` (`/api/questions`).
 
 `?status=processando|revisao|concluida|falhou` (opcional). Resposta: `{ "jobs": [{ "id", "source", "fileName", "status", "createdAt", "updatedAt" }] }` (até 20, mais recentes primeiro).
 
-A tela de importação lista as **não salvas** (`processando` e `revisao`, exceto lotes manuais), com **Continuar** ou **Revisar**. Assim o resultado da IA não se perde ao recarregar a página ou trocar de dispositivo.
+A tela de importação lista as **não salvas** (`processando` e `revisao`, exceto lotes manuais), com **Continuar** ou **Revisar**. Assim o resultado da IA não se perde ao recarregar a página ou trocar de dispositivo. Cada uma também tem **Remover** (lixeira, com confirmação na própria linha) — ver abaixo.
+
+---
+
+## `DELETE /api/imports/:id` — remover importação não salva (T063)
+
+Para quem testou uma importação, não gostou do resultado e quer tentar de outro jeito. O job vai para `status = cancelada` e o `state` é zerado (`{}`): o texto extraído, o resultado da IA e o rascunho da revisão são apagados; fica só o registro mínimo (origem, nome do arquivo, `ai_requests`). Nenhuma questão é tocada — nada da importação tinha sido salvo.
+
+| Status | Quando | Corpo |
+|---|---|---|
+| 200 | Removida (ou já estava removida — idempotente) | `{ "ok": true }` |
+| 404 | Não existe ou é de outro usuário | — |
+| 409 | Já salva no banco (`concluida`) | `{ "error": "Esta importação já foi salva no seu banco." }` |
+
+Vale para `processando`, `revisao`, `falhou` e `rascunho`. Um `/run` ou `/images` ainda em curso não "ressuscita" o job: as gravações deles exigem `status = processando` (`/images` responde 409). Depois de removida, `/draft` e `/commit` respondem 409.
 
 ---
 
@@ -257,7 +271,6 @@ A tela de importação lista as **não salvas** (`processando` e `revisao`, exce
 | Método | Rota | Uso |
 |---|---|---|
 | `PATCH` | `/api/imports/:id/draft` | Autosave da revisão (cards + rascunhos editados) |
-| `DELETE` | `/api/imports/:id` | Cancelar job (`status = cancelada`) |
 | `POST` | `/api/ai/distractors` | Distratores sob demanda no editor (≤ 6 questões por chamada) |
 
 ## Orçamento de IA (referência)

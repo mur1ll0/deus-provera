@@ -90,6 +90,27 @@ describe('rotas de importação: agente externo → commit', () => {
     const [row] = await db().select().from(schema.importJob).where(eq(schema.importJob.id, id))
     expect(Object.keys(row.state)).toEqual(['commitResult'])
     expect((await app.request(`/api/imports/${id}/draft`, json('PATCH', { review: draft }))).status).toBe(409)
+    // Já salva: não dá para remover (T063)
+    expect((await app.request(`/api/imports/${id}`, json('DELETE'))).status).toBe(409)
+  })
+
+  it('remover importação não salva (T063): cancelada, estado apagado, idempotente, só do dono', async () => {
+    const created = await app.request('/api/imports', json('POST', { source: 'agente_externo', payload }))
+    const { id } = (await created.json()) as { id: string }
+    await app.request(`/api/imports/${id}/draft`, json('PATCH', { review: { cards: [], drafts: {}, source: 'agente_externo' } }))
+
+    const anon = await app.request(`/api/imports/${id}`, { method: 'DELETE' })
+    expect(anon.status).toBe(401)
+
+    const del = await app.request(`/api/imports/${id}`, json('DELETE'))
+    expect(del.status).toBe(200)
+    const [row] = await db().select().from(schema.importJob).where(eq(schema.importJob.id, id))
+    expect(row).toMatchObject({ status: 'cancelada', state: {} })
+
+    expect((await app.request(`/api/imports/${id}`, json('DELETE'))).status).toBe(200) // idempotente
+    expect((await app.request(`/api/imports/${id}/draft`, json('PATCH', { review: { cards: [], drafts: {}, source: 'agente_externo' } }))).status).toBe(409)
+    expect((await app.request(`/api/imports/${id}/commit`, json('POST', { cards: [] }))).status).not.toBe(200)
+    expect((await app.request('/api/imports/00000000-0000-0000-0000-000000000000', json('DELETE'))).status).toBe(404)
   })
 
   it('lote manual: cria job "manual" e salva pelo mesmo commit; sem sessão → 401', async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, notInArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
@@ -22,6 +22,7 @@ import { loadTaxonomyForPrompt } from '../services/taxonomy'
  *  GET  /imports/:id         estado/progresso
  *  POST /imports/:id/commit  grava cards+questões revisados pelo usuário (specs/002 § Confirmação)
  *  GET  /imports             importações recentes do usuário (?status=processando → retomáveis)
+ *  DELETE /imports/:id       remove uma importação não salva (status cancelada, estado apagado)
  */
 
 const IMAGE_ID = /^p\d{1,3}-\d{1,2}$/
@@ -166,6 +167,7 @@ export const importsRoutes = new Hono<AppEnv>()
 
     // Relê o estado para não sobrescrever outro lote gravado em paralelo (o cliente envia em sequência)
     const [fresh] = await db().select().from(schema.importJob).where(eq(schema.importJob.id, job.id))
+    if (fresh?.status !== 'processando') throw new HTTPException(409, { message: 'Esta importação foi removida.' })
     const next = fresh.state as unknown as ImportState
     // falha → continua "pendente" até VISION_MAX_ATTEMPTS: o cliente reenvia sozinha (uploadPageImages)
     const nextImages = applyImageResults(next.images ?? {}, results, batch)
@@ -173,7 +175,7 @@ export const importsRoutes = new Hono<AppEnv>()
     await db()
       .update(schema.importJob)
       .set({ state: updated as unknown as Record<string, unknown>, aiRequests: fresh.aiRequests + (aiRequests - job.aiRequests), updatedAt: new Date() })
-      .where(eq(schema.importJob.id, job.id))
+      .where(and(eq(schema.importJob.id, job.id), eq(schema.importJob.status, 'processando')))
 
     return c.json({
       results: results.map((r) => ({ id: r.id, status: r.status, kind: r.kind ?? null, retry: nextImages[r.id]?.status === 'pendente' })),
@@ -195,7 +197,7 @@ export const importsRoutes = new Hono<AppEnv>()
       db()
         .update(schema.importJob)
         .set({ state: s as unknown as Record<string, unknown>, status, aiRequests, guardrailRisk: s.guardRisk, error: error ?? null, updatedAt: new Date() })
-        .where(eq(schema.importJob.id, job.id))
+        .where(and(eq(schema.importJob.id, job.id), eq(schema.importJob.status, 'processando'))) // removida no meio (T063) → não grava
 
     let state = job.state as unknown as ImportState
     try {
@@ -282,6 +284,27 @@ export const importsRoutes = new Hono<AppEnv>()
       .orderBy(desc(j.updatedAt))
       .limit(20)
     return c.json({ jobs })
+  })
+
+  /*
+   * Remover uma importação não salva (T063): `status = cancelada` e o estado (texto do PDF, resultado
+   * da IA, rascunho da revisão) é apagado — fica só o registro mínimo. Idempotente; já salva → 409.
+   * Um /run ou /images ainda em curso não "ressuscita" o job: as gravações deles exigem `processando`.
+   */
+  .delete('/:id', async (c) => {
+    const user = c.get('user')!
+    const j = schema.importJob
+    const owned = and(eq(j.id, c.req.param('id')), eq(j.ownerId, user.id))
+    const [removed] = await db()
+      .update(j)
+      .set({ status: 'cancelada', state: {}, error: null, updatedAt: new Date() })
+      .where(and(owned, notInArray(j.status, ['concluida', 'cancelada'])))
+      .returning({ id: j.id })
+    if (removed) return c.json({ ok: true })
+    const [job] = await db().select({ status: j.status }).from(j).where(owned)
+    if (!job) throw new HTTPException(404)
+    if (job.status === 'concluida') throw new HTTPException(409, { message: 'Esta importação já foi salva no seu banco.' })
+    return c.json({ ok: true }) // já removida
   })
 
   /*

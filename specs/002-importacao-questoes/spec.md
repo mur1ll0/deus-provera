@@ -121,6 +121,7 @@ Como estudante, quero digitar questões uma a uma (objetivas ou discursivas), in
 - Mesmo PDF importado duas vezes: duplicatas detectadas por `content_hash` (por dono) e ignoradas, com contagem no resumo final.
 - Modelo devolve questões "inventadas" (não presentes no texto): reprovadas pelo grounding e reprocessadas ou caídas no fallback.
 - Usuário fecha a aba durante o processamento: o job continua retomável (estado persistido a cada nó).
+- Usuário testa uma importação, não gosta do resultado e quer tentar de outro jeito: remove a importação não salva pela lista (lixeira + confirmação); o conteúdo é apagado do servidor e ela some da lista (`DELETE /api/imports/:id`, T063). Importação já salva não pode ser removida por aí.
 - Cota diária esgotada: 429 com mensagem, checkpoint mantido.
 - Usuário com JSON gigante do agente (> 300 questões): erro de validação pedindo para dividir.
 - Questão com imagem sem descrição: permitida, mas sinalizada "Depende de imagem". No simulado aparece o aviso.
