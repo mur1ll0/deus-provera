@@ -151,7 +151,7 @@ export interface GradeResult {
 export interface HistoryItem {
   id: string
   mode: SimuladoMode
-  status: 'em_andamento' | 'finalizado'
+  status: 'em_andamento' | 'finalizado' | 'abandonado'
   questions: number
   accuracy: number | null
   points: number | null

@@ -7,7 +7,7 @@
 - [x] T001 Dependências `ai@7`, `@openrouter/ai-sdk-provider@3`, `zod@4` em `package.json`
 - [x] T002 Variáveis `OPENROUTER_API_KEY`, `AI_DAILY_BUDGET`, `AI_USER_DAILY_LIMIT` em `server/env.ts` e `.env.example`
 - [x] T003 Tabelas `ai_cache` e `ai_call` em `server/db/schema.ts`
-- [ ] T004 Operacional: comprar US$10 de créditos no OpenRouter (1000 req/dia) e ativar o Guardrail de prompt injection (flag) na chave. Registrar em `docs/03-requisitos-tecnicos.md`
+- [ ] T004 Operacional: comprar US$10 de créditos no OpenRouter (1000 req/dia) e ativar o Guardrail de prompt injection (flag) na chave. Registrar em `docs/03-requisitos-tecnicos.md` — créditos de US$10 comprados (2026-11-20; `npm run ai:ping` ok). Falta ativar o Guardrail "Prompt injection" (flag) no painel do OpenRouter
 
 ## Fase B — Fundação (Fase 1 do roadmap)
 
@@ -44,23 +44,23 @@
 
 - [x] T027 `explainQuestion` com cache compartilhado e checagem de gabarito em `server/ai/services.ts`
 - [x] T028 `POST /api/ai/explain/:questionId` (parcial) em `server/routes/ai.ts`
-- [ ] T029 Autorização pela tentativa: treino com a questão revelada ou tentativa finalizada; 403 em prova em andamento
-- [ ] T030 `hintForQuestion` + `POST /api/ai/hint/:questionId` (só treino + `aiHints` + não respondida; marca `used_hint`; reprova dica com sobreposição ≥ 0,6 com a correta)
+- [x] T029 Autorização pela tentativa: treino com a questão revelada ou tentativa finalizada; 403 em prova em andamento — rotas da IA do simulado ficam em `/api/simulados/:id/{hint,explain,ai-grade}/:itemId` (autorização pela tentativa); as rotas genéricas `/api/ai/explain` e `/api/ai/grade` foram removidas
+- [x] T030 `hintForQuestion` + `POST /api/ai/hint/:questionId` (só treino + `aiHints` + não respondida; marca `used_hint`; reprova dica com sobreposição ≥ 0,6 com a correta) — `hintFor` reaproveita a explicação cacheada e descarta dica com sobreposição ≥ 0,6 com a resposta
 - [ ] T031 Cache de explicação para questões privadas com `owner_id` na chave (ponto em aberto 3)
 - [x] T032 [P] UI de dica/explicação no executor e no gabarito (protótipo, `src/features/simulado/*`)
-- [ ] T033 Ligar a UI às rotas reais (remover `src/mocks/ai.ts` desses fluxos)
+- [x] T033 Ligar a UI às rotas reais (remover `src/mocks/ai.ts` desses fluxos) — executor, resultado, editor e revisão usam a IA real na API; `src/mocks/ai.ts` só no modo protótipo (selo DEMO)
 
 ## Fase F — US3 Correção de discursiva por IA (P2)
 
 - [x] T034 `gradeDiscursive` + `POST /api/ai/grade` (parcial)
-- [ ] T035 Integração com a spec 003: `POST /api/simulados/:id/answers/:qid/grade` usa `gradeDiscursive`, limita a nota a [0, 1] e grava `graded_by = ia`
+- [x] T035 Integração com a spec 003: `POST /api/simulados/:id/answers/:qid/grade` usa `gradeDiscursive`, limita a nota a [0, 1] e grava `graded_by = ia` — no treino (depois de ver a resposta esperada) e na correção posterior (`aiGradeItem`), nota em [0,1], `graded_by = ia`, ajuste no ranking
 - [ ] T036 Conjunto de 20 respostas com nota humana em `server/ai/eval/cases/grade.json` e métrica de ±0,2 (SC-004)
 
 ## Fase G — US4 Distratores (P2)
 
-- [ ] T037 `generateDistractors` avulso + `POST /api/ai/distractors` (preserva a correta escrita pelo usuário)
+- [x] T037 `generateDistractors` avulso + `POST /api/ai/distractors` (preserva a correta escrita pelo usuário)
 - [x] T038 [P] Botão "Gerar incorretas com IA" no editor e geração em lote na revisão (protótipo)
-- [ ] T039 Ligar o editor (`src/features/questions/QuestionEditor.tsx`) e a revisão (`src/features/import/ReviewBoard.tsx`) à rota real
+- [x] T039 Ligar o editor (`src/features/questions/QuestionEditor.tsx`) e a revisão (`src/features/import/ReviewBoard.tsx`) à rota real
 - [ ] T040 Casos de avaliação de distratores (30 discursivas) com revisão humana amostral (SC-005)
 
 ## Fase H — Visão (Fase 2)
@@ -71,7 +71,7 @@
 ## Fase I — Polimento
 
 - [ ] T043 [P] Política de privacidade: informar que o conteúdo das questões é processado por modelos gratuitos de terceiros via OpenRouter
-- [ ] T044 [P] Expirar registros de `ai_call` com mais de 90 dias (cron diário)
+- [x] T044 [P] Expirar registros de `ai_call` com mais de 90 dias (cron diário) — rotina diária `/api/cron/daily` (Vercel Cron) com `CRON_SECRET`
 - [ ] T045 Atualizar a tabela de modelos em `docs/05-pipeline-ia.md` a cada execução do eval
 
 ## Definição de pronto

@@ -141,9 +141,35 @@ Disponível só depois de finalizado; antes disso responde `409`.
 
 ---
 
+## IA no simulado (spec 005)
+
+A autorização vem da **tentativa**: as rotas genéricas `/api/ai/explain` e `/api/ai/grade` foram removidas.
+
+**Regras comuns:**
+- Toda chamada passa por `reserveAiRequest`, o orçamento global e por usuário.
+- O conteúdo do aluno vai para o modelo como dado, com `wrapUntrusted`.
+- IA indisponível responde `503` com uma alternativa: autocorreção ou comentário do autor.
+
+| Rota | Quando | Resposta |
+|---|---|---|
+| `POST /:id/hint/:itemId` | Treino com `aiHints`, pergunta ainda não revelada. Na prova ou com dicas desligadas: `403`; já revelada: `409` | `{ hint }`. Marca `used_hint`, e a pergunta vale metade. Dica que entrega a resposta (sobreposição ≥ 0,6) é trocada por uma genérica |
+| `POST /:id/explain/:itemId` | Treino com `aiHints` depois de revelar a pergunta, ou simulado finalizado. Antes disso: `403` | `{ hint, perAlternative: [{ id, verdict, why }], summary, cached }`. Usa cache compartilhado (`ai_cache`) e nunca contradiz o gabarito |
+| `POST /:id/ai-grade/:itemId` | Discursiva com texto e sem nota: no treino depois de ver a resposta esperada, ou depois de finalizar | `{ answer, matched: boolean[], feedback, score?, delta? }`. Nota em [0, 1] com `graded_by = ia` (vale 100%). Depois de finalizar, lança a diferença no ranking |
+
+Fora do simulado: `POST /api/ai/distractors { items: [{ id, stem, prompt?, expectedAnswer, correct? }] }`.
+- Até 6 perguntas por chamada, ou seja, 1 requisição.
+- Gera a correta e 4 distratores com explicação. Se o autor já escreveu a correta (`correct`), ela é preservada.
+- Usado pelo editor e pela revisão da importação.
+
+## Rotina diária
+
+`GET /api/cron/daily`, chamada pelo Vercel Cron com `Authorization: Bearer <CRON_SECRET>`; sem o segredo responde `503`.
+- Fecha como **abandonadas** as tentativas em andamento há mais de 24 h (`abandoned_at`, sem pontos).
+- Apaga `ai_call` com mais de 90 dias.
+
 ## Ranking e painel (spec 004)
 
-- `GET /api/ranking?periodo=semana|mes|geral` → `{ periodo, rows: RankingRow[], me: RankingRow | null }`.
+- `GET /api/ranking?periodo=semana|mes|geral&area=<uuid>` → `{ periodo, area, rows: RankingRow[], me: RankingRow | null }`. Com `area`, conta só os lançamentos daquela área, que é a área predominante do simulado.
   - Cada `RankingRow` traz `{ pos, userId, name, image, institution, points, grade, simulados, me }`.
   - `grade` é a nota dos últimos 30 dias, com prova pesando 2; é `null` com menos de 10 respostas.
   - Ordem: pontos, depois simulados no período, depois `userId`.

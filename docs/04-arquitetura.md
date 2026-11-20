@@ -135,6 +135,9 @@ sequenceDiagram
 | GET | `/api/imports/:id` | Status, cards e rascunhos | 002 |
 | POST | `/api/imports/:id/commit` | Grava questões revisadas (idempotente; [contrato](../specs/002-importacao-questoes/contracts/api-imports.md)) | 002 |
 | GET | `/api/imports` | Importações recentes (retomar as não salvas) | 002 |
+| POST | `/api/simulados/:id/{hint,explain,ai-grade}/:itemId` | Dica, explicação e correção por IA no simulado (autorização pela tentativa) | 005 |
+| POST | `/api/ai/distractors` | Distratores por IA (editor e revisão) | 005 |
+| GET | `/api/cron/daily` | Rotina diária (Vercel Cron, `CRON_SECRET`): abandona simulados > 24 h, limpa `ai_call` > 90 dias | 003/005 |
 | GET/POST/PUT/DELETE | `/api/questions[/:id]` | Banco: listar (minhas/comunidade), criar manual, editar, excluir — [contrato](../specs/002-importacao-questoes/contracts/api-questions.md) | 002 |
 | GET | `/api/taxonomy` | Áreas e disciplinas (contagem de assuntos: S3) | 002/003 |
 | POST | `/api/simulados` | Cria tentativa (sorteio no servidor) | 003 |

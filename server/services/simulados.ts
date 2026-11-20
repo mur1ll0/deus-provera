@@ -6,7 +6,10 @@ import type { z } from 'zod'
 import type { answerInput, AnswerView, AttemptView, GradeResult, HistoryItem, ItemKey, PreviewView, progressInput, PublicQuestion, ResultView, RevealResult, ScoreDetail } from '../../shared/schemas/simulado'
 import { scoreSimulado } from '../../shared/scoring'
 import { autoTimeLimitMin, isEligible, presentAs } from '../../shared/simulado'
+import { AiUnavailableError } from '../ai/client'
+import { explainQuestion, gradeDiscursive, hintFor, type QuestionForAi } from '../ai/services'
 import { db, schema } from '../db/client'
+import { reserveAiRequest } from '../middleware'
 import { loadItems } from './questions'
 
 /**
@@ -316,6 +319,16 @@ export async function revealItem(userId: string, id: string, itemId: string, che
 
 /* ------------------------------ pontuação ------------------------------ */
 
+/** Área predominante (mais perguntas) do simulado — vai no `points_ledger.area_id` para o ranking por área (spec 004 › T007). */
+function mainArea(loaded: Loaded, questionIds: string[]): string | null {
+  const count = new Map<string, number>()
+  for (const qid of questionIds) {
+    const r = loaded.rows.get(qid)
+    if (r) count.set(r.areaId, (count.get(r.areaId) ?? 0) + (loaded.items.get(qid)?.length ?? 1))
+  }
+  return [...count.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null
+}
+
 /**
  * Perguntas respondidas em OUTRAS tentativas finalizadas nos 7 dias antes do início desta (anti-farm).
  * Janela fixa no tempo: o resultado e as correções posteriores recalculam o mesmo valor.
@@ -414,7 +427,7 @@ export async function finishSimulado(userId: string, id: string): Promise<ScoreD
       : []),
     d
       .insert(pointsLedger)
-      .values({ userId, attemptId: a.id, points: detail.countsForRanking ? detail.total : 0, reason: `simulado:${cfg.mode}` })
+      .values({ userId, attemptId: a.id, areaId: mainArea(loaded, a.questionIds), points: detail.countsForRanking ? detail.total : 0, reason: `simulado:${cfg.mode}` })
       .onConflictDoNothing(),
   ])
   const [fresh] = await db().select().from(attempt).where(eq(attempt.id, a.id))
@@ -466,19 +479,23 @@ export async function getResult(userId: string, id: string): Promise<ResultView>
 /** Correção posterior de uma discursiva pendente pelo checklist (T027): recalcula e lança a diferença no ranking. */
 export async function gradeItem(userId: string, id: string, itemId: string, checked: boolean[]): Promise<GradeResult> {
   const a = await ownedAttempt(userId, id)
-  if (!a.finishedAt || !a.scoreDetail) throw new HTTPException(409, { message: 'Finalize o simulado antes de corrigir.' })
   const { item } = await itemOf(a, itemId)
+  const total = item.keyPoints?.length ?? 0
+  return applyLateGrade(a, userId, itemId, total ? checked.slice(0, total).filter(Boolean).length / total : 0, 'checklist')
+}
+
+/** Corrige uma discursiva pendente de um simulado FINALIZADO e lança a diferença no ranking. */
+async function applyLateGrade(a: AttemptRow, userId: string, itemId: string, score: number, gradedBy: 'checklist' | 'ia'): Promise<GradeResult> {
+  if (!a.finishedAt || !a.scoreDetail) throw new HTTPException(409, { message: 'Finalize o simulado antes de corrigir.' })
   const [row] = await db()
     .select()
     .from(attemptAnswer)
     .where(and(eq(attemptAnswer.attemptId, a.id), eq(attemptAnswer.itemId, itemId)))
   if (!row || row.score != null) throw new HTTPException(409, { message: 'Esta pergunta já foi corrigida.' })
-  const total = item.keyPoints?.length ?? 0
-  const score = total ? checked.slice(0, total).filter(Boolean).length / total : 0
 
   const [loaded, prog] = await Promise.all([loadQuestions(a.questionIds), progressOf(a.id)])
   const finals = new Map<string, FinalAnswer>([...prog.answers].map(([k, r]) => [k, { score: r.score, gradedBy: r.gradedBy, revealedBeforeAnswer: r.revealedBeforeAnswer, usedHint: r.usedHint }]))
-  finals.set(itemId, { ...finals.get(itemId), score, gradedBy: 'checklist' })
+  finals.set(itemId, { ...finals.get(itemId), score, gradedBy })
   const detail = await computeScore(a, loaded, finals, a.totalTimeMs ?? 0)
   const delta = detail.countsForRanking ? detail.total - a.scoreDetail.total : 0
 
@@ -486,12 +503,142 @@ export async function gradeItem(userId: string, id: string, itemId: string, chec
   await d.batch([
     d
       .update(attemptAnswer)
-      .set({ score, gradedBy: 'checklist' })
+      .set({ score, gradedBy })
       .where(and(eq(attemptAnswer.attemptId, a.id), eq(attemptAnswer.itemId, itemId), isNull(attemptAnswer.score))),
     d.update(attempt).set({ accuracy: detail.accuracy, points: detail.total, scoreDetail: detail }).where(eq(attempt.id, a.id)),
-    ...(delta ? [d.insert(pointsLedger).values({ userId, attemptId: a.id, points: delta, reason: `ajuste:correcao:${itemId}` }).onConflictDoNothing()] : []),
+    ...(delta ? [d.insert(pointsLedger).values({ userId, attemptId: a.id, areaId: mainArea(loaded, a.questionIds), points: delta, reason: `ajuste:correcao:${itemId}` }).onConflictDoNothing()] : []),
   ])
-  return { answer: answerView({ ...row, score, gradedBy: 'checklist' }, true), score: detail, delta }
+  return { answer: answerView({ ...row, score, gradedBy }, true), score: detail, delta }
+}
+
+/* ------------------------------ IA no simulado (spec 005) ------------------------------ */
+
+/** Pergunta + enunciado no formato dos serviços de IA (comentários do autor incluídos). */
+async function aiInputOf(a: AttemptRow, itemId: string) {
+  const { questionId, item, kind } = await itemOf(a, itemId)
+  const [q] = await db().select({ stem: question.stem }).from(question).where(eq(question.id, questionId))
+  const input: QuestionForAi = {
+    id: item.id,
+    context: item.prompt ? q.stem : null,
+    stem: item.prompt || q.stem,
+    expectedAnswer: item.expectedAnswer,
+    // Discursiva apresentada como discursiva: a IA explica pela resposta esperada (sem alternativas).
+    alternatives: kind === 'objetiva' ? (item.alternatives ?? []).map((x) => ({ id: x.id, text: x.text, correct: x.correct, explanation: x.explanation })) : [],
+  }
+  return { item, kind, questionId, input, stem: `${q.stem}\n${item.prompt}`.trim() }
+}
+
+const aiUnavailable = (fallback: string) => new HTTPException(503, { message: `IA indisponível agora. ${fallback}` })
+
+/** Dica antes de responder (T030): só treino com dicas ligadas e pergunta ainda não revelada; vale metade. */
+export async function hintForItem(userId: string, id: string, itemId: string): Promise<{ hint: string }> {
+  const a = await ownedAttempt(userId, id)
+  const cfg = configOf(a)
+  if (cfg.mode !== 'treino' || !cfg.aiHints) throw new HTTPException(403, { message: 'Dicas com IA estão desligadas neste simulado.' })
+  assertOpen(a)
+  const { input, questionId, kind } = await aiInputOf(a, itemId)
+  const [cur] = await db()
+    .select()
+    .from(attemptAnswer)
+    .where(and(eq(attemptAnswer.attemptId, a.id), eq(attemptAnswer.itemId, itemId)))
+  if (cur?.revealedAt) throw new HTTPException(409, { message: 'O gabarito desta pergunta já foi mostrado.' })
+  await reserveAiRequest(userId)
+  let hint: string
+  try {
+    hint = (await hintFor(input, userId)).hint
+  } catch (err) {
+    if (err instanceof AiUnavailableError) throw aiUnavailable('Tente de novo em instantes.')
+    throw err
+  }
+  await db()
+    .insert(attemptAnswer)
+    .values({ attemptId: a.id, itemId, questionId, presentedAs: kind, usedHint: true })
+    .onConflictDoUpdate({ target: [attemptAnswer.attemptId, attemptAnswer.itemId], set: { usedHint: true } })
+  return { hint }
+}
+
+export interface ItemExplanation {
+  hint: string
+  perAlternative: { id: string; verdict: 'correta' | 'incorreta'; why: string }[]
+  summary: string
+  cached: boolean
+}
+
+/** Explicação completa (T029): treino depois de revelar a pergunta (com IA ligada) ou simulado finalizado. Nunca na prova em andamento. */
+export async function explainItem(userId: string, id: string, itemId: string): Promise<ItemExplanation> {
+  const a = await ownedAttempt(userId, id)
+  const cfg = configOf(a)
+  if (!a.finishedAt) {
+    if (cfg.mode !== 'treino' || !cfg.aiHints) throw new HTTPException(403, { message: 'A explicação aparece depois de finalizar o simulado.' })
+    const [cur] = await db()
+      .select({ revealedAt: attemptAnswer.revealedAt })
+      .from(attemptAnswer)
+      .where(and(eq(attemptAnswer.attemptId, a.id), eq(attemptAnswer.itemId, itemId)))
+    if (!cur?.revealedAt) throw new HTTPException(403, { message: 'Confirme a resposta antes de pedir a explicação.' })
+  }
+  const { input } = await aiInputOf(a, itemId)
+  await reserveAiRequest(userId)
+  try {
+    const e = await explainQuestion(input, userId)
+    return { hint: e.dica, perAlternative: e.por_alternativa.map((p) => ({ id: p.id, verdict: p.veredito, why: p.porque })), summary: e.resumo, cached: e.cached }
+  } catch (err) {
+    if (err instanceof AiUnavailableError) throw aiUnavailable('Veja o comentário do autor nas alternativas.')
+    throw err
+  }
+}
+
+export interface AiGradeResult {
+  answer: AnswerView
+  /** Ponto de acerto contemplado, na ordem dos pontos de acerto. */
+  matched: boolean[]
+  feedback: string
+  /** Só na correção posterior (simulado finalizado). */
+  score?: ScoreDetail
+  delta?: number
+}
+
+/**
+ * Correção da discursiva pela IA (T035): no treino logo depois de revelar, ou depois de finalizar (pendente).
+ * Nota limitada a [0, 1], `graded_by = ia` (vale 100% no ranking). A resposta do aluno vai como DADO (wrapUntrusted).
+ */
+export async function aiGradeItem(userId: string, id: string, itemId: string): Promise<AiGradeResult> {
+  const a = await ownedAttempt(userId, id)
+  const cfg = configOf(a)
+  const { item, kind, stem } = await aiInputOf(a, itemId)
+  if (kind !== 'discursiva' || !item.expectedAnswer) throw new HTTPException(400, { message: 'Só perguntas discursivas com resposta esperada são corrigidas pela IA.' })
+  const [row] = await db()
+    .select()
+    .from(attemptAnswer)
+    .where(and(eq(attemptAnswer.attemptId, a.id), eq(attemptAnswer.itemId, itemId)))
+  if (!row?.text?.trim()) throw new HTTPException(400, { message: 'Escreva uma resposta antes de pedir a correção.' })
+  if (row.score != null) throw new HTTPException(409, { message: 'Esta pergunta já foi corrigida.' })
+  if (!a.finishedAt) {
+    if (cfg.mode !== 'treino' || !cfg.aiHints || !row.revealedAt) throw new HTTPException(403, { message: 'A correção por IA aparece depois de ver a resposta esperada (treino) ou ao finalizar.' })
+    assertOpen(a)
+  }
+  await reserveAiRequest(userId)
+  let g: Awaited<ReturnType<typeof gradeDiscursive>>
+  try {
+    g = await gradeDiscursive({ stem, expectedAnswer: item.expectedAnswer, keyPoints: item.keyPoints ?? [], answer: row.text }, userId)
+  } catch (err) {
+    if (err instanceof AiUnavailableError) throw aiUnavailable('Use a autocorreção pelos pontos de acerto.')
+    throw err
+  }
+  const score = Math.min(1, Math.max(0, Math.round(g.nota * 100) / 100))
+  const kps = item.keyPoints ?? []
+  const norm = (t: string) => t.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{M}/gu, '').trim()
+  const matched = kps.map((k, i) => g.pontos[i] && norm(g.pontos[i].ponto) === norm(k) ? g.pontos[i].atendido : (g.pontos.find((p) => norm(p.ponto) === norm(k))?.atendido ?? g.pontos[i]?.atendido ?? false))
+
+  if (a.finishedAt) {
+    const late = await applyLateGrade(a, userId, itemId, score, 'ia')
+    return { answer: late.answer, matched, feedback: g.feedback, score: late.score, delta: late.delta }
+  }
+  const [updated] = await db()
+    .update(attemptAnswer)
+    .set({ score, gradedBy: 'ia' })
+    .where(and(eq(attemptAnswer.attemptId, a.id), eq(attemptAnswer.itemId, itemId), isNull(attemptAnswer.score)))
+    .returning()
+  return { answer: answerView(updated ?? { ...row, score, gradedBy: 'ia' }, true), matched, feedback: g.feedback }
 }
 
 /* --------------------------------- histórico --------------------------------- */
@@ -503,7 +650,7 @@ export async function listSimulados(userId: string, limit = 30): Promise<History
     return {
       id: a.id,
       mode: a.mode,
-      status: a.finishedAt ? 'finalizado' : 'em_andamento',
+      status: a.abandonedAt ? 'abandonado' : a.finishedAt ? 'finalizado' : 'em_andamento',
       questions: a.questionIds.length,
       accuracy: a.accuracy,
       points: a.points,

@@ -1,0 +1,1 @@
+ALTER TABLE "attempt" ADD COLUMN "abandoned_at" timestamp with time zone;

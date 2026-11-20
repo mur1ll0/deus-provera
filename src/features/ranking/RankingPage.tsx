@@ -1,13 +1,19 @@
 import clsx from 'clsx'
 import { Crown, Medal, Trophy } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useAuth } from '@/app/auth-context'
 import { RankingPanel } from '@/components/RankingPanel'
 import { Avatar, Card, EmptyState, PageHeader, Segmented } from '@/components/ui'
 import { useRankingData, type Period } from '@/features/dashboard/data'
+import { api, unwrap } from '@/lib/api'
 
 export function RankingPage() {
   const [period, setPeriod] = useState<Period>('geral')
-  const { rows, me, loading, error } = useRankingData(period)
+  const [areaId, setAreaId] = useState<string | null>(null)
+  const real = useAuth().mode === 'real'
+  const taxonomy = useQuery({ queryKey: ['taxonomy'], queryFn: () => unwrap(api.taxonomy.index.$get()), enabled: real, staleTime: 5 * 60_000 })
+  const { rows, me, loading, error } = useRankingData(period, areaId)
   const podium = [rows[1], rows[0], rows[2]].filter(Boolean)
   const list = me && !rows.some((r) => r.me) ? [...rows, me] : rows
 
@@ -15,16 +21,30 @@ export function RankingPage() {
     <div className="mx-auto max-w-6xl">
       <PageHeader eyebrow="Ranking" title="Quem mais pontuou" description="Pontos vêm dos simulados: prova vale 3× mais que treino. A nota (0–10) é sua acurácia ponderada dos últimos 30 dias." />
 
-      <Segmented
-        value={period}
-        onChange={setPeriod}
-        className="mb-5"
-        options={[
-          { value: 'semana', label: 'Semana' },
-          { value: 'mes', label: 'Mês' },
-          { value: 'geral', label: 'Geral' },
-        ]}
-      />
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <Segmented
+          value={period}
+          onChange={setPeriod}
+          options={[
+            { value: 'semana', label: 'Semana' },
+            { value: 'mes', label: 'Mês' },
+            { value: 'geral', label: 'Geral' },
+          ]}
+        />
+        {real && (taxonomy.data?.areas.length ?? 0) > 0 && (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="font-bold text-muted">Área</span>
+            <select className="rounded-xl border border-line bg-white px-3 py-2 text-sm" value={areaId ?? ''} onChange={(e) => setAreaId(e.target.value || null)}>
+              <option value="">Todas</option>
+              {taxonomy.data!.areas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-6">
           {error && <p className="text-sm text-rose-600">{error}</p>}

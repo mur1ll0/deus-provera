@@ -13,7 +13,7 @@ import { ApiError } from '@/lib/api'
 import { formatDuration, LETTERS, pct } from '@/lib/format'
 import { aiExplain, aiGradeDiscursive, type AiExplanation } from '@/mocks/ai'
 import { useStore } from '@/mocks/store'
-import { createRemote, fetchResult, kindsOf, postGrade, toAttempt, toQuestions } from './remote'
+import { createRemote, fetchResult, kindsOf, postAiGrade, postExplain, postGrade, toAttempt, toQuestions } from './remote'
 import { computeAttemptScore } from './scoringAdapter'
 
 /** O que a tela de resultado precisa — vindo da API real ou do store do protótipo. */
@@ -24,10 +24,14 @@ interface ResultData {
   meId: string
   kindOf: (it: QuestionItem) => AnswerKind
   disciplineName: (q: Question) => string
-  /** Correção posterior pelos pontos de acerto (`checked`) — ou, só no protótipo, pela IA simulada. */
-  grade: (it: QuestionItem, g: { checked: boolean[] } | { score: number; gradedBy: 'ia' }) => Promise<void>
+  /** Correção posterior pelos pontos de acerto (`checked`). */
+  grade: (it: QuestionItem, g: { checked: boolean[] }) => Promise<void>
+  /** Correção posterior pela IA: devolve os pontos atendidos e o comentário. */
+  aiGrade: (it: QuestionItem, a: ItemAnswer) => Promise<{ matched: boolean[]; feedback?: string }>
+  explain: (it: QuestionItem, topic?: string) => Promise<AiExplanation>
   startRetry: (cfg: SimuladoConfig) => Promise<string | null>
-  aiGradeDemo: boolean
+  /** IA simulada do protótipo (selo DEMO). */
+  aiDemo: boolean
 }
 
 const unavailable = (
@@ -66,12 +70,22 @@ function RemoteResult({ id }: { id: string }) {
       kindOf: (it) => kinds.get(it.id) ?? 'discursiva',
       disciplineName: (x) => x.disciplineId,
       grade: async (it, g) => {
-        if ('checked' in g) await grade.mutateAsync({ itemId: it.id, checked: g.checked })
+        await grade.mutateAsync({ itemId: it.id, checked: g.checked })
+      },
+      aiGrade: async (it) => {
+        const r = await postAiGrade(id, it.id)
+        void queryClient.invalidateQueries({ queryKey: ['simulado-result', id] })
+        void queryClient.invalidateQueries({ queryKey: ['simulados'] })
+        return { matched: r.matched, feedback: r.feedback }
+      },
+      explain: async (it) => {
+        const e = await postExplain(id, it.id)
+        return { hint: e.hint, perAlternative: e.perAlternative, summary: e.summary, model: 'IA · OpenRouter' }
       },
       startRetry: async (cfg) => (await createRemote(cfg)).id,
-      aiGradeDemo: false,
+      aiDemo: false,
     }
-  }, [q.data, user, grade])
+  }, [q.data, user, grade, id, queryClient])
   if (q.error instanceof ApiError && q.error.status === 409) return <Navigate to={`/simulados/${id}`} replace />
   if (q.error) return unavailable
   if (!data) return <FullScreen>Carregando resultado…</FullScreen>
@@ -84,6 +98,10 @@ function LocalResult({ id }: { id: string }) {
   const attempt = store.attempts.find((a) => a.id === id)
   const byId = useMemo(() => new Map(store.questions.map((q) => [q.id, q])), [store.questions])
   if (!attempt || !attempt.finishedAt) return unavailable
+  const save = (it: QuestionItem, patch: Partial<ItemAnswer>) => {
+    const next: SimuladoAttempt = { ...attempt, answers: { ...attempt.answers, [it.id]: { ...(attempt.answers[it.id] ?? { itemId: it.id, score: 0 }), ...patch } } }
+    store.saveAttempt({ ...next, points: computeAttemptScore(next, byId, store.me.id).total })
+  }
   const data: ResultData = {
     attempt,
     qs: attempt.questionIds.map((qid) => byId.get(qid)).filter(Boolean) as Question[],
@@ -91,13 +109,15 @@ function LocalResult({ id }: { id: string }) {
     meId: store.me.id,
     kindOf: (it) => presentAs(it, attempt.config.answerFormat),
     disciplineName: (x) => store.disciplineName(x.disciplineId),
-    grade: async (it, g) => {
-      const patch: Partial<ItemAnswer> = 'checked' in g ? { score: g.checked.filter(Boolean).length / Math.max(1, g.checked.length), gradedBy: 'checklist' } : g
-      const next: SimuladoAttempt = { ...attempt, answers: { ...attempt.answers, [it.id]: { ...(attempt.answers[it.id] ?? { itemId: it.id, score: 0 }), ...patch } } }
-      store.saveAttempt({ ...next, points: computeAttemptScore(next, byId, store.me.id).total })
+    grade: async (it, g) => save(it, { score: g.checked.filter(Boolean).length / Math.max(1, g.checked.length), gradedBy: 'checklist' }),
+    aiGrade: async (it, a) => {
+      const r = await aiGradeDiscursive(a.text ?? '', it.keyPoints ?? [])
+      save(it, { score: r.score, gradedBy: 'ia' })
+      return { matched: r.matched }
     },
+    explain: (it, topic) => aiExplain(it, topic),
     startRetry: async (cfg) => store.startSimulado(cfg)?.id ?? null,
-    aiGradeDemo: true,
+    aiDemo: true,
   }
   return <ResultBody data={data} />
 }
@@ -227,7 +247,7 @@ function ResultBody({ data }: { data: ResultData }) {
                     <div className="space-y-4 px-2 pb-4 text-sm sm:pl-13">
                       <p className="whitespace-pre-line rounded-xl bg-brand-50/60 p-3">{q.stem}</p>
                       {q.items.map((it, j) => (
-                        <ItemReview key={it.id} item={it} index={j} multi={q.items.length > 1} topic={q.topic} kind={data.kindOf(it)} a={ans(it)} onGrade={(g) => data.grade(it, g)} aiGradeDemo={data.aiGradeDemo} />
+                        <ItemReview key={it.id} item={it} index={j} multi={q.items.length > 1} topic={q.topic} kind={data.kindOf(it)} a={ans(it)} data={data} />
                       ))}
                     </div>
                   )}
@@ -304,8 +324,7 @@ function ItemReview({
   topic,
   kind,
   a,
-  onGrade,
-  aiGradeDemo,
+  data,
 }: {
   item: QuestionItem
   index: number
@@ -313,19 +332,20 @@ function ItemReview({
   topic?: string
   kind: AnswerKind
   a: ItemAnswer
-  onGrade: (g: { checked: boolean[] } | { score: number; gradedBy: 'ia' }) => Promise<void>
-  aiGradeDemo: boolean
+  data: ResultData
 }) {
   const [ai, setAi] = useState<AiExplanation | null>(null)
   const [loading, setLoading] = useState(false)
   const [gradeError, setGradeError] = useState<string | null>(null)
-  async function submit(g: { checked: boolean[] } | { score: number; gradedBy: 'ia' }) {
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const demo = data.aiDemo ? <DemoTag /> : null
+  async function run(work: () => Promise<void>, fallback: string) {
     setLoading(true)
     setGradeError(null)
     try {
-      await onGrade(g)
+      await work()
     } catch (err) {
-      setGradeError((err as Error).message || 'Não foi possível salvar a correção.')
+      setGradeError((err as Error).message || fallback)
     } finally {
       setLoading(false)
     }
@@ -369,14 +389,16 @@ function ItemReview({
               variant="secondary"
               className="mt-2"
               disabled={loading}
-              onClick={async () => {
-                setLoading(true)
-                setAi(await aiExplain(item, topic))
-                setLoading(false)
-              }}
+              onClick={() => void run(async () => setAi(await data.explain(item, topic)), 'IA indisponível agora.')}
             >
-              <BrainCircuit size={14} /> {loading ? 'Gerando…' : 'Explicar alternativas com IA'} <DemoTag />
+              <BrainCircuit size={14} /> {loading ? 'Gerando…' : 'Explicar alternativas com IA'} {demo}
             </Button>
+          )}
+          {ai?.summary && <p className="mt-2 whitespace-pre-line rounded-xl bg-brand-50 p-3 text-xs">{ai.summary}</p>}
+          {gradeError && (
+            <p role="alert" className="mt-1 text-xs text-rose-600">
+              {gradeError}
+            </p>
           )}
         </>
       ) : (
@@ -411,23 +433,23 @@ function ItemReview({
             )}
             {a.score == null ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" disabled={loading} onClick={() => void submit({ checked })}>
+                <Button size="sm" disabled={loading} onClick={() => void run(() => data.grade(item, { checked }), 'Não foi possível salvar a correção.')}>
                   {loading ? 'Salvando…' : 'Confirmar autocorreção'}
                 </Button>
-                {aiGradeDemo && (
-                  <Button
-                    size="sm"
-                    variant="gold"
-                    disabled={loading || !a.text?.trim()}
-                    onClick={async () => {
-                      const r = await aiGradeDiscursive(a.text ?? '', item.keyPoints ?? [])
+                <Button
+                  size="sm"
+                  variant="gold"
+                  disabled={loading || !a.text?.trim()}
+                  onClick={() =>
+                    void run(async () => {
+                      const r = await data.aiGrade(item, a)
                       setChecked(r.matched)
-                      await submit({ score: r.score, gradedBy: 'ia' })
-                    }}
-                  >
-                    <Sparkles size={14} /> {loading ? 'Corrigindo…' : 'Corrigir com IA'} <DemoTag />
-                  </Button>
-                )}
+                      setFeedback(r.feedback ?? null)
+                    }, 'IA indisponível agora — use a autocorreção.')
+                  }
+                >
+                  <Sparkles size={14} /> {loading ? 'Corrigindo…' : 'Corrigir com IA'} {demo}
+                </Button>
                 {gradeError && (
                   <p role="alert" className="w-full text-xs text-rose-600">
                     {gradeError}
@@ -435,9 +457,12 @@ function ItemReview({
                 )}
               </div>
             ) : (
-              <p className="mt-2 font-display text-sm font-bold text-emerald-700">
-                Nota: {Math.round(a.score * 100)}% {a.gradedBy === 'ia' ? '(IA)' : a.gradedBy === 'checklist' ? '(autocorreção)' : ''}
-              </p>
+              <>
+                <p className="mt-2 font-display text-sm font-bold text-emerald-700">
+                  Nota: {Math.round(a.score * 100)}% {a.gradedBy === 'ia' ? '(IA)' : a.gradedBy === 'checklist' ? '(autocorreção)' : ''}
+                </p>
+                {feedback && <p className="mt-1 text-xs text-muted">{feedback}</p>}
+              </>
             )}
           </div>
         </div>

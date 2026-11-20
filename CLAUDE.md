@@ -33,7 +33,9 @@ npm run dev:api      # SPA + API Hono na mesma origem (http://localhost:3000) �
 npm run dev:full     # alternativa com vercel dev (projeto vinculado na Vercel)
 npm run check        # typecheck (front+server) + oxlint + vitest
 npm test             # vitest (sem banco)
-npm run test:db      # *.db.test.ts contra o Postgres (.env ou TEST_DATABASE_URL) — cria/apaga dados test-db-*
+npm run test:db      # *.db.test.ts contra o Postgres (.env ou TEST_DATABASE_URL) — cria/apaga dados test-db-*; AI_LIVE=1 inclui chamadas reais ao OpenRouter
+npm run test:e2e     # Playwright (sobe dev:api; sessão de teste no banco); E2E_AI=1 importa os PDFs de exemplo com IA real
+npm run db:seed:large # seed grande + medição (banco separado, ou --shared-db-ok: mede e apaga)
 npm run build        # tsc -b && vite build
 npm run db:generate  # gera migração a partir de server/db/schema.ts
 npm run db:migrate   # aplica migrações (usa DATABASE_URL_UNPOOLED)
@@ -70,4 +72,4 @@ Node 24 · Vite 8 · React 19.3 · React Router 8 · Tailwind 4.3 · TypeScript 
 
 Fase 0 concluída (planejamento + protótipo) + revisão de 2026-11-20 (modelo enunciado + perguntas, contrato v2, gabarito de referência e avaliação do importador: ~90% recall / ~95% precisão sem IA). Avaliação **com IA** pendente de `OPENROUTER_API_KEY`. Próximo: Fase 1 / S1 — ver `docs/08-roadmap.md`; considerar o pool multi-provedor e "Conectar OpenRouter" (docs/11).
 S1 (2026-11-20) em andamento: auth real no SPA (AuthProvider/RequireAuth), `/api/questions` + `/api/taxonomy`, Banco de questões lendo da API, migração `0000_init` e seed **aplicados no Neon**; login Google real e CRUD de questões pela tela validados localmente contra o Neon. Produção no ar em https://deus-provera.vercel.app (login Google validado). Perfil (`/perfil`, `/api/profile`), exclusão de conta (`DELETE /api/account`), aviso único do ranking e ranking com `display_name` prontos (spec 001 US3/US4). Simulados, dashboard, ranking (tela) e importação ainda usam o store mock.
-S2 (2026-11-20): commit da importação real (`POST /api/imports/:id/commit`, os três métodos → Neon, sem duplicatas). S3 (2026-11-20): simulados (sorteio, prazo, respostas, revelação no treino, finalização idempotente com ledger, resultado e correção posterior), painel (`/api/stats/me`) e ranking reais — telas na API, store mock só no modo protótipo; autosave da revisão da importação (T042). Pendente: IA assistente (dicas, explicações e correção por IA — spec 005, Fase 2); verificação de modo treino em `/api/ai/explain`.
+S2 (2026-11-20): commit da importação real (`POST /api/imports/:id/commit`, os três métodos → Neon, sem duplicatas). S3 (2026-11-20): simulados (sorteio, prazo, respostas, revelação no treino, finalização idempotente com ledger, resultado e correção posterior), painel (`/api/stats/me`) e ranking reais — telas na API, store mock só no modo protótipo; autosave da revisão da importação (T042). IA no simulado real (dica, explicação, correção — `/api/simulados/:id/{hint,explain,ai-grade}`), distratores (`/api/ai/distractors`), ranking por área, abandono > 24 h (cron), acessibilidade do cronômetro, E2E Playwright e seed grande (2026-11-20). Créditos OpenRouter ativos (1000 req/dia; `AI_USER_DAILY_LIMIT` padrão 200).

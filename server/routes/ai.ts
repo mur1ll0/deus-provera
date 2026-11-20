@@ -1,60 +1,52 @@
-import { and, asc, eq, isNull, or } from 'drizzle-orm'
+import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { inspectText } from '../../shared/guardrails'
 import { AiUnavailableError } from '../ai/client'
-import { explainQuestion, gradeDiscursive } from '../ai/services'
-import { db, schema } from '../db/client'
+import { generateDistractors } from '../ai/services'
 import { requireUser, reserveAiRequest, type AppEnv } from '../middleware'
 
-/** Carrega uma PERGUNTA + o enunciado da questão, respeitando dono/visibilidade. */
-async function loadItem(itemId: string, userId: string) {
-  const q = schema.question
-  const [row] = await db()
-    .select({ item: schema.questionItem, stem: q.stem })
-    .from(schema.questionItem)
-    .innerJoin(q, eq(q.id, schema.questionItem.questionId))
-    .where(and(eq(schema.questionItem.id, itemId), isNull(q.deletedAt), or(eq(q.ownerId, userId), eq(q.visibility, 'publica'))))
-  return row
-}
+/**
+ * IA fora do simulado (spec 005). Dica, explicação e correção ficam em /api/simulados/:id/…
+ * (autorização pela tentativa — T029); aqui só o que não depende de tentativa.
+ */
 
-/** Dicas/explicações e correção por IA durante o simulado (apenas modo treino ou após finalizar). */
+const text = (max: number) => z.string().max(max).transform((t) => inspectText(t).clean)
+
+/** Distratores avulsos (T037): editor de questão e revisão da importação; até 6 perguntas por chamada = 1 requisição. */
+const distractorsInput = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64),
+        stem: text(8_000),
+        prompt: text(4_000).optional(),
+        expectedAnswer: text(4_000).pipe(z.string().min(2, 'Informe a resposta esperada para gerar as alternativas.')),
+        correct: text(2_000).optional(),
+      }),
+    )
+    .min(1)
+    .max(6, 'No máximo 6 perguntas por vez.'),
+})
+
 export const aiRoutes = new Hono<AppEnv>()
   .use(requireUser)
+  .post(
+    '/distractors',
+    zValidator('json', distractorsInput, (r) => {
+      if (!r.success) throw new HTTPException(400, { message: r.error.issues[0]?.message ?? 'Dados inválidos.' })
+    }),
+    async (c) => {
+      const user = c.get('user')!
+      await reserveAiRequest(user.id)
+      try {
+        return c.json({ items: await generateDistractors(c.req.valid('json').items, user.id) })
+      } catch (err) {
+        if (err instanceof AiUnavailableError) throw new HTTPException(503, { message: 'IA indisponível agora. Escreva as alternativas ou tente de novo em instantes.' })
+        throw err
+      }
+    },
+  )
 
-  .post('/explain/:itemId', async (c) => {
-    const user = c.get('user')!
-    const row = await loadItem(c.req.param('itemId'), user.id)
-    if (!row) throw new HTTPException(404)
-    // TODO(spec 005 T029): exigir tentativa ativa em modo treino com aiHints, ou tentativa finalizada com esta pergunta (403 na prova).
-    const alts = await db().select().from(schema.alternative).where(eq(schema.alternative.itemId, row.item.id)).orderBy(asc(schema.alternative.position))
-    await reserveAiRequest(user.id)
-    try {
-      return c.json(
-        await explainQuestion(
-          { id: row.item.id, context: row.stem, stem: row.item.prompt || row.stem, expectedAnswer: row.item.expectedAnswer, alternatives: alts },
-          user.id,
-        ),
-      )
-    } catch (err) {
-      if (err instanceof AiUnavailableError) throw new HTTPException(503, { message: 'IA indisponível agora. Mostrando o comentário do autor.' })
-      throw err
-    }
-  })
-
-  .post('/grade', async (c) => {
-    const user = c.get('user')!
-    const body = z.object({ itemId: z.string().uuid(), answer: z.string().min(1).max(8000) }).safeParse(await c.req.json())
-    if (!body.success) throw new HTTPException(400)
-    const row = await loadItem(body.data.itemId, user.id)
-    if (!row?.item.expectedAnswer) throw new HTTPException(404)
-    const g = inspectText(body.data.answer)
-    await reserveAiRequest(user.id)
-    return c.json(
-      await gradeDiscursive(
-        { stem: `${row.stem}\n${row.item.prompt}`.trim(), expectedAnswer: row.item.expectedAnswer, keyPoints: row.item.keyPoints, answer: g.clean },
-        user.id,
-      ),
-    )
-  })
+export type AiRoutes = typeof aiRoutes

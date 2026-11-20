@@ -55,7 +55,7 @@ A lista gratuita muda. `server/ai/eval/` terá ~30 casos reais (PT-BR, medicina 
 
 **Custo estimado por importação** (PDF de 85 páginas ≈ 140 itens): ~18 chamadas `structure` (lotes de 8) + 1–3 `classify` + até 24 `distractors` (lotes de 6, opcional) ≈ **20–45 chamadas** → ~20–45 PDFs/dia no total. Daí:
 
-- `AI_DAILY_BUDGET=900` (reserva ~10% para margem) e `AI_USER_DAILY_LIMIT=60` por usuário.
+- `AI_DAILY_BUDGET=900` (reserva ~10% para margem) e `AI_USER_DAILY_LIMIT=200` por usuário (um PDF de ~140 questões usa ~60–70 requisições com visão).
 - Explicações são **cacheadas por questão** (`ai_cache`) e servem a todos os usuários: uma questão pública muito usada custa 1 chamada, não N.
 - Quando o orçamento acaba: aviso claro + caminhos sem IA (agente externo, autocorreção por checklist, edição manual).
 - Fila respeitando 20 req/min: o grafo processa um lote por vez; o breaker abre 60 s em `429`.

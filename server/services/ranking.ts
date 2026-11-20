@@ -46,7 +46,7 @@ async function gradesByUser(userIds: string[]): Promise<Map<string, number | nul
  * "Aparecer no ranking" some para os OUTROS, mas continua vendo a própria linha (spec 001 › US3, SC-003).
  * Desempate: mais simulados no período, depois id (estável).
  */
-export async function getRanking(viewerId: string, start: Date | null, limit = 50): Promise<Ranking> {
+export async function getRanking(viewerId: string, start: Date | null, limit = 50, areaId?: string): Promise<Ranking> {
   const l = schema.pointsLedger
   const p = schema.profile
   const total = sum(l.points).mapWith(Number)
@@ -63,7 +63,7 @@ export async function getRanking(viewerId: string, start: Date | null, limit = 5
     .from(l)
     .innerJoin(schema.user, eq(schema.user.id, l.userId))
     .leftJoin(p, eq(p.userId, l.userId))
-    .where(start ? gte(l.createdAt, start) : sql`true`)
+    .where(and(start ? gte(l.createdAt, start) : undefined, areaId ? eq(l.areaId, areaId) : undefined))
     .groupBy(l.userId, schema.user.name, schema.user.image, p.displayName, p.institution, p.showInRanking)
     .having(or(sql`coalesce(${p.showInRanking}, true)`, eq(l.userId, viewerId)))
     .orderBy(desc(total), desc(simulados), l.userId)

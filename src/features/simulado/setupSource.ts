@@ -84,10 +84,10 @@ export function useSetupSource(cfg: SimuladoConfig, real: boolean) {
     id: h.id,
     mode: h.mode,
     title: h.title,
-    detail: `${formatDate(h.startedAt)}${h.accuracy != null ? ` · ${pct(h.accuracy)}` : ''}${h.status === 'em_andamento' ? ' · não finalizado' : ''}`,
+    detail: `${formatDate(h.startedAt)}${h.status === 'finalizado' && h.accuracy != null ? ` · ${pct(h.accuracy)}` : ''}${h.status === 'em_andamento' ? ' · não finalizado' : h.status === 'abandonado' ? ' · abandonado (mais de 24 h sem finalizar)' : ''}`,
     points: h.status === 'finalizado' ? h.points : null,
-    href: h.status === 'finalizado' ? `/simulados/${h.id}/resultado` : `/simulados/${h.id}`,
-    cta: h.status === 'finalizado' ? 'ver gabarito' : 'continuar',
+    href: h.status === 'em_andamento' ? `/simulados/${h.id}` : `/simulados/${h.id}/resultado`,
+    cta: h.status === 'em_andamento' ? 'continuar' : 'ver gabarito',
   }))
   return {
     loading: preview.isPending,

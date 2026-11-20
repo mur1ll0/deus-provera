@@ -86,7 +86,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T059 Medir a visão: `npm run eval:import -- --vision` (recortes em Node com `@napi-rs/canvas`, mesmo nó do grafo, métricas de questões com imagem e POP-Q ponto a ponto) e registrar em docs/10 §7 (`scripts/eval-import.ts`, `scripts/pdf-images-node.ts`)
 - [x] T060 No hook `useImportJob` (T031): criar o job com `pdfJobPayload()`, chamar `renderPageImages()` + `uploadPageImages()` antes do loop de `/run`, mostrar o progresso da visão (recortes e lotes) e tratar 429 (seguir sem visão); opção "Transcrever as N imagens com IA" na tela de PDF (`src/features/import/importJob.ts`, `src/features/import/useImportJob.ts`, `src/features/import/ImportPage.tsx`). **Não testado ao vivo** contra Neon + login Google (credenciais ainda não configuradas no `.env`)
 - [ ] T051 [P] Conjunto de ataques de injeção embutidos em PDF/JSON + teste de que a saída não muda (SC-005) (`server/__tests__/injection.test.ts`)
-- [ ] T052 [P] Teste E2E do fluxo agente externo → revisão → salvar (Playwright) (`e2e/import.spec.ts`)
+- [x] T052 [P] Teste E2E do fluxo agente externo → revisão → salvar (Playwright) (`e2e/import.spec.ts`) — `e2e/importacao.spec.ts`: agente externo → revisão → salvar → banco; reimportar = duplicata. Com `E2E_AI=1`, os PDFs de exemplo pela tela com a IA real
 - [ ] T053 Medir SC-001 (tempo de extração) e SC-002 (requisições por PDF) e registrar em `docs/05-pipeline-ia.md`
 - [ ] T054 Remover `runMockPipeline`, `classifyText` e `aiGenerateDistractors` mock quando os endpoints reais estiverem ativos (`src/mocks/ai.ts`)
 

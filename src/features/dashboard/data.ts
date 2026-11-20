@@ -94,11 +94,16 @@ const PERIOD_FACTOR: Record<Period, (i: number) => number> = {
   geral: () => 1,
 }
 
-export function useRankingData(period: Period): { rows: RankRow[]; me: RankRow | null; loading: boolean; error: string | null } {
+export function useRankingData(period: Period, areaId?: string | null): { rows: RankRow[]; me: RankRow | null; loading: boolean; error: string | null } {
   const { mode } = useAuth()
   const store = useStore()
   const real = mode === 'real'
-  const q = useQuery({ queryKey: ['ranking', period], queryFn: () => unwrap(api.ranking.index.$get({ query: { periodo: period } })), enabled: real, staleTime: 60_000 })
+  const q = useQuery({
+    queryKey: ['ranking', period, areaId ?? 'todas'],
+    queryFn: () => unwrap(api.ranking.index.$get({ query: { periodo: period, ...(areaId ? { area: areaId } : {}) } })),
+    enabled: real,
+    staleTime: 60_000,
+  })
   if (!real) {
     const rows = RANKING.map((r, i) => ({ ...r, points: Math.round(r.points * PERIOD_FACTOR[period](i)) }))
       .sort((a, b) => b.points - a.points || b.grade - a.grade)

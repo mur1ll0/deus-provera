@@ -5,11 +5,14 @@ import { z } from 'zod'
 import { answerInput, gradeInput, progressInput, revealInput, simuladoConfigInput } from '../../shared/schemas/simulado'
 import { requireUser, type AppEnv } from '../middleware'
 import {
+  aiGradeItem,
   createSimulado,
+  explainItem,
   finishSimulado,
   getResult,
   getSimulado,
   gradeItem,
+  hintForItem,
   listSimulados,
   previewSimulado,
   revealItem,
@@ -54,6 +57,19 @@ export const simuladosRoutes = new Hono<AppEnv>()
   .post('/:id/grade/:itemId', zValidator('param', itemParam, validationHook), zValidator('json', gradeInput, validationHook), async (c) => {
     const p = c.req.valid('param')
     return c.json(await gradeItem(uid(c), p.id, p.itemId, c.req.valid('json').checked))
+  })
+  // IA no simulado (spec 005): a autorização vem da tentativa (modo, dicas ligadas, revelada/finalizada).
+  .post('/:id/hint/:itemId', zValidator('param', itemParam, validationHook), async (c) => {
+    const p = c.req.valid('param')
+    return c.json(await hintForItem(uid(c), p.id, p.itemId))
+  })
+  .post('/:id/explain/:itemId', zValidator('param', itemParam, validationHook), async (c) => {
+    const p = c.req.valid('param')
+    return c.json(await explainItem(uid(c), p.id, p.itemId))
+  })
+  .post('/:id/ai-grade/:itemId', zValidator('param', itemParam, validationHook), async (c) => {
+    const p = c.req.valid('param')
+    return c.json(await aiGradeItem(uid(c), p.id, p.itemId))
   })
 
 export type SimuladosRoutes = typeof simuladosRoutes

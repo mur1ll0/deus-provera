@@ -98,3 +98,9 @@ export const postGrade = (id: string, itemId: string, checked: boolean[]) => unw
 export function withKey(item: QuestionItem, key: ItemKey): QuestionItem {
   return mergeKey({ id: item.id, label: item.label, prompt: item.prompt, type: item.type, presentAs: 'objetiva', keyPointCount: 0, alternatives: item.alternatives?.map((a) => ({ id: a.id, text: a.text })) }, key)
 }
+
+/* --------------------------------- IA (spec 005) --------------------------------- */
+
+export const postHint = (id: string, itemId: string) => unwrap(sim[':id'].hint[':itemId'].$post({ param: { id, itemId } }))
+export const postExplain = (id: string, itemId: string) => unwrap(sim[':id'].explain[':itemId'].$post({ param: { id, itemId } }))
+export const postAiGrade = (id: string, itemId: string) => unwrap(sim[':id']['ai-grade'][':itemId'].$post({ param: { id, itemId } }))

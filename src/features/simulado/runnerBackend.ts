@@ -1,7 +1,8 @@
 import type { AnswerKind, ItemAnswer, Question, QuestionItem, SimuladoAttempt } from '@shared/domain'
 import { presentAs } from '@shared/simulado'
+import { aiExplain, aiGradeDiscursive, type AiExplanation } from '@/mocks/ai'
 import type { StoreApi } from '@/mocks/store'
-import { postFinish, postReveal, putAnswer, putProgress, withKey } from './remote'
+import { postAiGrade, postExplain, postFinish, postHint, postReveal, putAnswer, putProgress, withKey } from './remote'
 import { autoGrade, computeAttemptScore } from './scoringAdapter'
 
 /**
@@ -26,8 +27,14 @@ export interface RunnerBackend {
   limitMs: number | null
   /** relógio do servidor − relógio local. */
   clockOffsetMs: number
-  /** Correção da discursiva por IA no ato: só a simulada do protótipo (a real chega com a spec 005). */
-  aiGradeDemo: boolean
+  /** IA simulada do protótipo (mostra o selo DEMO); na API real a IA é a do OpenRouter (spec 005). */
+  aiDemo: boolean
+  /** Dica antes de responder (vale metade). */
+  hint: (item: QuestionItem, topic?: string) => Promise<string>
+  /** Explicação por alternativa + resumo (depois de revelar). */
+  explain: (item: QuestionItem, topic?: string) => Promise<AiExplanation>
+  /** Correção da discursiva pela IA (depois de ver a resposta esperada). */
+  aiGrade: (item: QuestionItem, current: ItemAnswer) => Promise<{ matched: boolean[]; answer: Partial<ItemAnswer>; feedback?: string }>
   saveAnswer: (itemId: string, patch: Partial<ItemAnswer>) => void
   saveTime: (questionId: string, deltaMs: number) => void
   saveFlag: (questionId: string, flagged: boolean) => void
@@ -46,7 +53,13 @@ export function localBackend(attempt: SimuladoAttempt, store: StoreApi, byId: Ma
     kindOf: (it) => presentAs(it, attempt.config.answerFormat),
     limitMs: attempt.config.timeLimitMin ? attempt.config.timeLimitMin * 60_000 : null,
     clockOffsetMs: 0,
-    aiGradeDemo: true,
+    aiDemo: true,
+    hint: async (item, topic) => (await aiExplain(item, topic)).hint,
+    explain: (item, topic) => aiExplain(item, topic),
+    aiGrade: async (item, current) => {
+      const r = await aiGradeDiscursive(current.text ?? '', item.keyPoints ?? [])
+      return { matched: r.matched, answer: { score: r.score, gradedBy: 'ia' } }
+    },
     saveAnswer: () => {},
     saveTime: () => {},
     saveFlag: () => {},
@@ -119,7 +132,20 @@ export function remoteBackend(opts: { attemptId: string; limitMs: number | null;
     kindOf: (it) => opts.kinds.get(it.id) ?? 'discursiva',
     limitMs: opts.limitMs,
     clockOffsetMs: opts.clockOffsetMs,
-    aiGradeDemo: false,
+    aiDemo: false,
+    hint: async (item) => {
+      await run(`text:${item.id}`)
+      return (await postHint(attemptId, item.id)).hint
+    },
+    explain: async (item) => {
+      const e = await postExplain(attemptId, item.id)
+      return { hint: e.hint, perAlternative: e.perAlternative, summary: e.summary, model: 'IA · OpenRouter (modelos gratuitos)' }
+    },
+    aiGrade: async (item) => {
+      await run(`text:${item.id}`)
+      const g = await postAiGrade(attemptId, item.id)
+      return { matched: g.matched, answer: { score: g.answer.score, gradedBy: g.answer.gradedBy }, feedback: g.feedback }
+    },
     saveAnswer: (itemId, patch) => {
       if (patch.choiceId !== undefined) schedule(`choice:${itemId}`, () => putAnswer(attemptId, itemId, { choiceId: patch.choiceId ?? null }))
       if (patch.text !== undefined) schedule(`text:${itemId}`, () => putAnswer(attemptId, itemId, { text: patch.text ?? null }), TEXT_DEBOUNCE_MS)

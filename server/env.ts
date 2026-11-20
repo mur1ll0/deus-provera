@@ -26,7 +26,9 @@ const schema = z.object({
   /** Orçamento diário de requisições de IA do app (1000/dia com ≥ US$10 de créditos; 50/dia sem). */
   AI_DAILY_BUDGET: opt(z.coerce.number().int().positive().default(900)),
   /** Limite por usuário/dia para evitar que um usuário consuma a cota de todos. */
-  AI_USER_DAILY_LIMIT: opt(z.coerce.number().int().positive().default(60)),
+  AI_USER_DAILY_LIMIT: opt(z.coerce.number().int().positive().default(200)),
+  /** Segredo das rotinas agendadas (Vercel Cron envia `Authorization: Bearer <CRON_SECRET>`). Sem ele, /api/cron/* fica desligado. */
+  CRON_SECRET: opt(z.string().min(16).optional()),
 })
 
 export type Env = z.infer<typeof schema>

@@ -206,5 +206,35 @@ describe('painel e ranking com simulados reais (spec 004)', () => {
     const r = await getRanking(me, null)
     expect(r.me).toMatchObject({ pos: d.rank, points: d.points, simulados: done.filter((h) => h.countsForRanking).length, me: true })
     expect(r.me!.grade).toBe(d.grade)
+
+    // Ranking por área (T007/T018): os lançamentos levam a área predominante do simulado
+    const byArea = await getRanking(me, null, 50, areaId)
+    expect(byArea.me?.points).toBe(d.points)
+    expect((await getRanking(me, null, 50, crypto.randomUUID())).me).toBeNull()
+  })
+})
+
+describe('rotina diária (T032 / spec 005 T044)', () => {
+  it('fecha como abandonada a tentativa com mais de 24 h; a rota exige CRON_SECRET', async () => {
+    const { abandonStaleAttempts } = await import('../services/maintenance')
+    const { id } = await createSimulado(me, base({ mode: 'treino', reveal: 'final' }))
+    await db().update(schema.attempt).set({ startedAt: new Date(Date.now() - 25 * 3_600_000) }).where(eq(schema.attempt.id, id))
+    const fresh = await createSimulado(me, base({ mode: 'treino', reveal: 'final' }))
+    expect(await abandonStaleAttempts()).toBeGreaterThanOrEqual(1)
+    const hist = await listSimulados(me)
+    expect(hist.find((h) => h.id === id)).toMatchObject({ status: 'abandonado', points: 0, countsForRanking: false })
+    expect(hist.find((h) => h.id === fresh.id)?.status).toBe('em_andamento')
+    await expect(getSimulado(me, id)).rejects.toMatchObject({ status: 409 })
+    expect(await db().select().from(schema.pointsLedger).where(eq(schema.pointsLedger.attemptId, id))).toHaveLength(0)
+
+    const { app } = await import('../app')
+    const before = process.env.CRON_SECRET
+    delete process.env.CRON_SECRET
+    expect((await app.request('/api/cron/daily')).status).toBe(503)
+    process.env.CRON_SECRET = 'segredo-de-teste-123456'
+    expect((await app.request('/api/cron/daily', { headers: { authorization: 'Bearer errado' } })).status).toBe(401)
+    expect((await app.request('/api/cron/daily', { headers: { authorization: 'Bearer segredo-de-teste-123456' } })).status).toBe(200)
+    if (before) process.env.CRON_SECRET = before
+    else delete process.env.CRON_SECRET
   })
 })

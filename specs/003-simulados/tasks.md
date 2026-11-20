@@ -37,7 +37,7 @@
 - [x] T022 `POST /api/simulados/:id/reveal/:questionId` (403 na prova, trava a resposta, `revealed_before_answer`, autocorreção por checklist)
 - [x] T023 Filtro por assuntos e tipos no sorteio (já parcial em T010) + teste com discursiva apresentada como objetiva
 - [x] T024 [P] UI de revelação imediata (objetiva e discursiva com checklist) no executor (protótipo)
-- [ ] T025 Ligar "Pedir dica" e "Explicar com IA" às rotas de IA (spec 005), marcando `used_hint` via `PUT …/answers`
+- [x] T025 Ligar "Pedir dica" e "Explicar com IA" às rotas de IA (spec 005), marcando `used_hint` via `PUT …/answers` — dica (`POST …/hint/:itemId`, marca `used_hint`) e explicação (`…/explain/:itemId`) com o OpenRouter
 
 ## Fase E — US3 Gabarito, correção posterior e "treinar o que errei" (P2)
 
@@ -50,12 +50,12 @@
 
 - [x] T030 `prioritizeMistakes`: subconsulta com a última resposta por questão com `score < 0.5`, completando com sorteio
 - [x] T031 Teste de escopo: "só as minhas" nunca traz terceiros; "comunidade" nunca traz questões privadas de terceiros
-- [ ] T032 Job (cron Vercel diário) que marca como `abandonado` as tentativas em andamento há mais de 24 h
+- [x] T032 Job (cron Vercel diário) que marca como `abandonado` as tentativas em andamento há mais de 24 h — `server/services/maintenance.ts` via `/api/cron/daily` (vercel.json › crons, 09:00 UTC); coluna `attempt.abandoned_at` (migração 0002); histórico mostra "abandonado"
 
 ## Fase G — Polimento
 
-- [ ] T033 [P] Acessibilidade: `aria-live` no cronômetro (avisos em 5 min e 1 min), foco ao trocar de questão, contraste AA
-- [ ] T034 [P] Teste E2E (Playwright) prova completa: criar → responder → expirar → resultado
+- [x] T033 [P] Acessibilidade: `aria-live` no cronômetro (avisos em 5 min e 1 min), foco ao trocar de questão, contraste AA — aviso falado aos 5 e 1 min (`aria-live`), `role="timer"`, foco na questão ao navegar
+- [x] T034 [P] Teste E2E (Playwright) prova completa: criar → responder → expirar → resultado — `e2e/simulado.spec.ts` (`npm run test:e2e`): prova com 1 min, responde por teclado, tempo expira → resultado → histórico; treino em 375 px
 - [ ] T035 [P] Métricas: tempo de criação do simulado (SC-003) no log estruturado
 - [x] T036 Remover `src/mocks/*` do fluxo de simulados (manter só para Storybook/demos) — o store mock segue só no modo protótipo (dev sem API), atrás de `localBackend`
 

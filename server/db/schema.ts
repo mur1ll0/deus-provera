@@ -242,6 +242,8 @@ export const attempt = pgTable(
     /** Prazo calculado no servidor (prova): respostas após o prazo são ignoradas. */
     deadlineAt: ts('deadline_at'),
     finishedAt: ts('finished_at'),
+    /** Fechada automaticamente após 24 h em andamento (cron diário — spec 003 › T032): não pontua. */
+    abandonedAt: ts('abandoned_at'),
     totalTimeMs: integer('total_time_ms'),
     accuracy: real('accuracy'),
     points: integer('points'),

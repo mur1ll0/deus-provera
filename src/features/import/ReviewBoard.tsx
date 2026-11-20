@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { AlertTriangle, FolderPlus, GripVertical, Layers, ListChecks, Pencil, Sparkles, Trash2 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Badge, Button, Card, DemoTag, Field, inputClass, Modal } from '@/components/ui'
-import { aiGenerateDistractors } from '@/mocks/ai'
+import { useDistractors } from '@/lib/ai'
 import { uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
 import { QuestionEditor } from '@/features/questions/QuestionEditor'
 import type { ReviewProblem } from './commit'
@@ -37,6 +37,8 @@ export function ReviewBoard({
   const [editingQ, setEditingQ] = useState<DraftQuestion | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [bulk, setBulk] = useState<'idle' | 'running' | 'done'>('idle')
+  const [bulkError, setBulkError] = useState<string | null>(null)
+  const ai = useDistractors()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor))
 
   const { cards, drafts } = state
@@ -97,19 +99,23 @@ export function ReviewBoard({
     onChange({ ...state, drafts: nextDrafts, cards: cards.map((c) => ({ ...c, questionIds: c.questionIds.filter((x) => x !== qid) })) })
   }
 
+  /** Distratores para todas as perguntas com resposta esperada e sem alternativas (lotes de 6 = 1 requisição cada). */
   async function generateAllDistractors() {
     setBulk('running')
-    const next = { ...drafts }
-    for (const d of Object.values(drafts)) {
-      if (!d.items.some((i) => !i.alternatives?.length && i.expectedAnswer)) continue
-      const items = []
-      for (const it of d.items) {
-        items.push(!it.alternatives?.length && it.expectedAnswer ? { ...it, alternatives: await aiGenerateDistractors(it) } : it)
-      }
-      next[d.id] = { ...d, items }
+    setBulkError(null)
+    const reqs = Object.values(drafts).flatMap((d) =>
+      d.items.filter((it) => !it.alternatives?.length && it.expectedAnswer?.trim()).map((it) => ({ id: it.id, stem: d.stem, prompt: it.prompt, expectedAnswer: it.expectedAnswer!.trim() })),
+    )
+    try {
+      const out = await ai.generate(reqs)
+      const next = Object.fromEntries(Object.entries(drafts).map(([k, d]) => [k, { ...d, items: d.items.map((it) => (out.get(it.id) ? { ...it, alternatives: out.get(it.id) } : it)) }]))
+      onChange({ ...state, drafts: next })
+      setBulk('done')
+      if (out.size < reqs.length) setBulkError(`${reqs.length - out.size} pergunta(s) ficaram sem alternativas — tente de novo ou escreva no editor.`)
+    } catch (err) {
+      setBulk('idle')
+      setBulkError((err as Error).message || 'IA indisponível agora.')
     }
-    onChange({ ...state, drafts: next })
-    setBulk('done')
   }
 
   const activeDraft = activeId ? drafts[activeId] : null
@@ -129,8 +135,8 @@ export function ReviewBoard({
       {/* Barra de resumo */}
       <Card className="flex flex-wrap items-center gap-4 p-4">
         <div className="flex flex-wrap gap-2 text-sm">
-          <Badge tone="brand">{total} questões</Badge>
-          <Badge tone="neutral">{cards.length} cards</Badge>
+          <Badge tone="brand">{total} {total === 1 ? 'questão' : 'questões'}</Badge>
+          <Badge tone="neutral">{cards.length} {cards.length === 1 ? 'card' : 'cards'}</Badge>
           {flagged > 0 && (
             <Badge tone="gold">
               <AlertTriangle size={12} /> {flagged} para revisar
@@ -141,7 +147,7 @@ export function ReviewBoard({
         <div className="ml-auto flex flex-wrap gap-2">
           {perguntasSemAlt > 0 && (
             <Button size="sm" variant="gold" disabled={bulk === 'running'} onClick={generateAllDistractors}>
-              <Sparkles size={14} /> {bulk === 'running' ? 'Gerando…' : `Gerar múltipla escolha p/ ${perguntasSemAlt} perguntas`} <DemoTag />
+              <Sparkles size={14} /> {bulk === 'running' ? 'Gerando…' : `Gerar múltipla escolha p/ ${perguntasSemAlt} perguntas`} {ai.demo && <DemoTag />}
             </Button>
           )}
           {cards.length > 6 && cards.length > total / 3 && (
@@ -155,6 +161,11 @@ export function ReviewBoard({
         </div>
       </Card>
 
+      {bulkError && (
+        <p role="alert" className="text-sm text-rose-600">
+          {bulkError}
+        </p>
+      )}
       <p className="text-sm text-muted">
         Arraste as questões entre os cards (ou use o seletor <b>Mover para</b>). Edite área, disciplina, assunto e descrição de cada card. Nada é salvo até você confirmar.
       </p>

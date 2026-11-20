@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import type { QuestionItem } from '@shared/domain'
 import { Badge, Button, DemoTag, Field, inputClass, Modal, Segmented } from '@/components/ui'
 import { LETTERS } from '@/lib/format'
-import { aiGenerateDistractors } from '@/mocks/ai'
+import { useDistractors } from '@/lib/ai'
 import { emptyItem, uid, type DraftQuestion } from '@/mocks/model'
 
 /**
@@ -148,7 +148,7 @@ export function QuestionEditor({
             </Button>
           </div>
           {q.items.map((it, i) => (
-            <ItemEditor key={it.id} item={it} index={i} multi={multi} onChange={(p) => setItem(it.id, p)} onRemove={multi ? () => removeItem(it.id) : undefined} />
+            <ItemEditor key={it.id} item={it} index={i} multi={multi} stem={q.stem} onChange={(p) => setItem(it.id, p)} onRemove={multi ? () => removeItem(it.id) : undefined} />
           ))}
         </div>
 
@@ -170,26 +170,38 @@ function ItemEditor({
   item,
   index,
   multi,
+  stem,
   onChange,
   onRemove,
 }: {
   item: QuestionItem
   index: number
   multi: boolean
+  stem: string
   onChange: (p: Partial<QuestionItem>) => void
   onRemove?: () => void
 }) {
   const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+  const ai = useDistractors()
   const alts = item.alternatives ?? []
   const correctText = alts.find((a) => a.correct)?.text
   const canGenerate = Boolean(item.expectedAnswer?.trim() || correctText?.trim())
 
   async function generate() {
     setGenerating(true)
-    const generated = await aiGenerateDistractors({ expectedAnswer: item.expectedAnswer || correctText, keyPoints: item.keyPoints, prompt: item.prompt })
-    // Se o usuário já escreveu a correta, preserva-a e usa só os distratores gerados.
-    onChange({ alternatives: correctText?.trim() ? [alts.find((a) => a.correct)!, ...generated.filter((g) => !g.correct)] : generated })
-    setGenerating(false)
+    setGenError(null)
+    try {
+      // Se o usuário já escreveu a correta, ela é preservada (o servidor gera só os distratores).
+      const out = await ai.generate([{ id: item.id, stem: stem || item.prompt || '—', prompt: item.prompt, expectedAnswer: (item.expectedAnswer || correctText || '').trim(), correct: correctText?.trim() || undefined }])
+      const generated = out.get(item.id)
+      if (generated?.length) onChange({ alternatives: generated })
+      else setGenError('A IA não devolveu alternativas. Tente de novo.')
+    } catch (err) {
+      setGenError((err as Error).message || 'IA indisponível agora.')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   const setAlts = (next: typeof alts) => onChange({ alternatives: next })
@@ -251,9 +263,14 @@ function ItemEditor({
             Alternativas {item.type === 'discursiva' && '(opcional — permite responder como múltipla escolha)'}
           </span>
           <Button size="sm" variant="gold" disabled={!canGenerate || generating} onClick={generate} title={canGenerate ? '' : 'Informe a resposta esperada ou a alternativa correta primeiro'}>
-            <Sparkles size={14} /> {generating ? 'Gerando…' : alts.length ? 'Regerar com IA' : 'Gerar com IA'} <DemoTag />
+            <Sparkles size={14} /> {generating ? 'Gerando…' : alts.length ? 'Regerar com IA' : 'Gerar com IA'} {ai.demo && <DemoTag />}
           </Button>
         </div>
+        {genError && (
+          <p role="alert" className="mb-2 text-xs text-rose-600">
+            {genError}
+          </p>
+        )}
         <ul className="space-y-2">
           {alts.map((a, i) => (
             <li key={a.id} className={clsx('flex items-start gap-2 rounded-xl border p-2', a.correct ? 'border-emerald-300 bg-emerald-50' : 'border-line bg-white')}>

@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
  * Sem cookie, o Better Auth não consulta o banco — por isso as variáveis abaixo podem ser fictícias.
  */
 
-const PUBLIC = [/^\/api\/auth\//, /^\/api\/health$/, /^\/api\/me$/]
+const PUBLIC = [/^\/api\/auth\//, /^\/api\/health$/, /^\/api\/me$/, /^\/api\/cron\//]
 const UUID = '00000000-0000-4000-8000-000000000000'
 
 let app: { routes: { method: string; path: string }[]; request: (path: string, init?: RequestInit) => Response | Promise<Response> }

@@ -49,7 +49,7 @@ export default defineConfig(({ mode }) => {
     test: dbTests
       ? { include: ['**/*.db.test.ts'], exclude: ['node_modules/**'], fileParallelism: false, testTimeout: 30_000 }
       : // `npm test`/`npm run check` nunca tocam o banco.
-        { exclude: ['node_modules/**', 'dist/**', '**/*.db.test.ts'] },
+        { exclude: ['node_modules/**', 'dist/**', 'e2e/**', '**/*.db.test.ts'] },
     server: withApi
       ? // Porta fixa: é a do BETTER_AUTH_URL e do callback OAuth registrado no Google.
         { port: 3000, strictPort: true }

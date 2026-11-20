@@ -159,3 +159,16 @@ Os dados são mock (`src/mocks/data.ts`). No servidor existe `GET /api/ranking` 
   - `area_id` no ledger (T007) e filtro por área;
   - rate limit (T008) e cache de 60 s (T020);
   - componente de regras (T023) e testes de fraude dedicados (T024 — finish duplicado, prazo e farm já cobertos em `simulados.db.test.ts`).
+
+### Medição (T026, 2026-11-20)
+
+`npm run db:seed:large -- --shared-db-ok` mede do servidor ao Neon, sem a latência da função na Vercel. Cenário: 200 estudantes, 6.000 lançamentos em 8 semanas e um estudante com 300 respostas.
+
+| Consulta | p50 | p95 |
+|---|---|---|
+| Ranking semana | 72 ms | 73 ms |
+| Ranking geral | 132 ms | 142 ms |
+| Ranking por área | 132 ms | 146 ms |
+| Painel (`/api/stats/me`) | 136 ms | 146 ms |
+
+O plano B (tabela `points_daily`) não é necessário nesta escala.

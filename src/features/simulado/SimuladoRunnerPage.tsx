@@ -9,7 +9,7 @@ import { FullScreen } from '@/app/RequireAuth'
 import { Logo } from '@/components/Logo'
 import { Badge, Button, Card, DemoTag, EmptyState, inputClass, Modal } from '@/components/ui'
 import { formatDuration, LETTERS } from '@/lib/format'
-import { aiExplain, aiGradeDiscursive, type AiExplanation } from '@/mocks/ai'
+import type { AiExplanation } from '@/mocks/ai'
 import { itemLabel } from '@/mocks/model'
 import { useStore } from '@/mocks/store'
 import { ApiError } from '@/lib/api'
@@ -178,14 +178,34 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
   useEffect(() => {
     finishRef.current = finish
   }, [finish])
+  // Acessibilidade (T033): aviso falado aos 5 min e 1 min do fim; foco na questão ao navegar.
+  const [announce, setAnnounce] = useState('')
+  const warned = useRef(new Set<number>())
   useEffect(() => {
     const t = setInterval(() => {
       const at = clock()
       setNow(at)
-      if (backend.limitMs !== null && at - startedAt >= backend.limitMs) void finishRef.current()
+      if (backend.limitMs === null) return
+      const left = backend.limitMs - (at - startedAt)
+      for (const min of [5, 1]) {
+        if (left <= min * 60_000 && left > 0 && !warned.current.has(min)) {
+          warned.current.add(min)
+          setAnnounce(min === 1 ? 'Atenção: falta 1 minuto para o fim do simulado.' : 'Atenção: faltam 5 minutos para o fim do simulado.')
+        }
+      }
+      if (left <= 0) void finishRef.current()
     }, 500)
     return () => clearInterval(t)
   }, [clock, backend, startedAt])
+  const cardRef = useRef<HTMLDivElement>(null)
+  const firstRender = useRef(true)
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false
+      return
+    }
+    cardRef.current?.focus()
+  }, [idx])
 
   const elapsed = now - startedAt
   const limitMs = backend.limitMs
@@ -240,6 +260,8 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
             <span
               className={clsx('inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-display text-sm font-bold tabular-nums', low ? 'animate-pulse bg-rose-100 text-rose-700' : 'bg-brand-50 text-brand-700')}
               title={remaining !== null ? 'Tempo restante' : 'Tempo total'}
+              role="timer"
+              aria-label={remaining !== null ? `Tempo restante: ${formatDuration(remaining)}` : `Tempo total: ${formatDuration(elapsed)}`}
             >
               <Timer size={15} /> {remaining !== null ? formatDuration(remaining) : formatDuration(elapsed)}
             </span>
@@ -255,6 +277,10 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
 
       <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[1fr_240px]">
         <main className="min-w-0">
+          <p className="sr-only" aria-live="assertive">
+            {announce}
+          </p>
+          <div ref={cardRef} tabIndex={-1} aria-label={`Questão ${idx + 1} de ${qs.length}`} className="rounded-[var(--radius-card)] outline-none focus-visible:ring-4 focus-visible:ring-brand-100">
           <Card className="p-5 sm:p-7">
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <Badge tone="brand">{backend.disciplineName(q)}</Badge>
@@ -283,13 +309,15 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
                   ans={answers[it.id] ?? blank(it.id)}
                   update={(p) => update(it.id, p)}
                   onReveal={(checked) => reveal(it, checked)}
-                  aiGrade={backend.aiGradeDemo}
+                  backend={backend}
+                  onGraded={(patch) => update(it.id, patch, false)}
                   revealNow={revealNow}
                   aiHints={!isProva && cfg.aiHints}
                 />
               ))}
             </div>
           </Card>
+          </div>
 
           <div className="mt-6 flex items-center justify-between gap-2">
             <Button variant="secondary" disabled={idx === 0} onClick={() => go(idx - 1)}>
@@ -425,7 +453,8 @@ function ItemView({
   revealNow,
   aiHints,
   onReveal,
-  aiGrade,
+  backend,
+  onGraded,
 }: {
   item: QuestionItem
   index: number
@@ -438,8 +467,9 @@ function ItemView({
   aiHints: boolean
   /** Revela o gabarito (treino) — devolve a pergunta com o gabarito. */
   onReveal: (checked?: boolean[]) => Promise<QuestionItem>
-  /** Correção por IA no ato (só no protótipo; na API real chega com a spec 005). */
-  aiGrade: boolean
+  backend: RunnerBackend
+  /** Nota vinda da correção por IA (já gravada pelo backend). */
+  onGraded: (patch: Partial<ItemAnswer>) => void
 }) {
   const [eliminated, setEliminated] = useState<Set<string>>(new Set())
   const [ai, setAi] = useState<AiExplanation | null>(null)
@@ -463,11 +493,42 @@ function ItemView({
   }
   const alts = item.alternatives ?? []
 
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const demo = backend.aiDemo ? <DemoTag /> : null
+
   async function askAi(mode: 'hint' | 'explain') {
     setAiLoading(mode)
-    setAi(await aiExplain(item, topic))
-    if (mode === 'hint' && !confirmed) update({ usedHint: true })
-    setAiLoading(null)
+    setAiError(null)
+    try {
+      if (mode === 'hint') {
+        const hint = await backend.hint(item, topic)
+        setAi({ hint, perAlternative: [], summary: '', model: '' })
+        // O servidor já marcou `used_hint`; aqui só reflete na tela (persist = false).
+        if (!confirmed) onGraded({ usedHint: true })
+      } else {
+        setAi(await backend.explain(item, topic))
+      }
+    } catch (err) {
+      setAiError((err as Error).message || 'IA indisponível agora.')
+    } finally {
+      setAiLoading(null)
+    }
+  }
+
+  async function gradeWithAi() {
+    setAiLoading('grade')
+    setAiError(null)
+    try {
+      const r = await backend.aiGrade(item, ans)
+      setChecked(r.matched)
+      setFeedback(r.feedback ?? null)
+      onGraded(r.answer)
+    } catch (err) {
+      setAiError((err as Error).message || 'IA indisponível agora — use a autocorreção.')
+    } finally {
+      setAiLoading(null)
+    }
   }
 
   return (
@@ -591,27 +652,19 @@ function ItemView({
                   <Button size="sm" disabled={busy} onClick={() => void doReveal(checked)}>
                     {busy ? 'Salvando…' : 'Confirmar autocorreção'}
                   </Button>
-                  {aiHints && aiGrade && (
-                    <Button
-                      size="sm"
-                      variant="gold"
-                      disabled={!ans.text?.trim() || aiLoading === 'grade'}
-                      onClick={async () => {
-                        setAiLoading('grade')
-                        const r = await aiGradeDiscursive(ans.text ?? '', item.keyPoints ?? [])
-                        setChecked(r.matched)
-                        update({ score: r.score, gradedBy: 'ia' })
-                        setAiLoading(null)
-                      }}
-                    >
-                      <Sparkles size={14} /> {aiLoading === 'grade' ? 'Corrigindo…' : 'Corrigir com IA'} <DemoTag />
+                  {aiHints && (
+                    <Button size="sm" variant="gold" disabled={!ans.text?.trim() || aiLoading === 'grade' || busy} onClick={() => void gradeWithAi()}>
+                      <Sparkles size={14} /> {aiLoading === 'grade' ? 'Corrigindo…' : 'Corrigir com IA'} {demo}
                     </Button>
                   )}
                 </div>
               ) : (
-                <p className="mt-3 font-display text-sm font-bold text-emerald-700">
-                  Nota nesta pergunta: {Math.round((ans.score ?? 0) * 100)}% {ans.gradedBy === 'ia' ? '(corrigida pela IA)' : '(autocorreção)'}
-                </p>
+                <>
+                  <p className="mt-3 font-display text-sm font-bold text-emerald-700">
+                    Nota nesta pergunta: {Math.round((ans.score ?? 0) * 100)}% {ans.gradedBy === 'ia' ? '(corrigida pela IA)' : '(autocorreção)'}
+                  </p>
+                  {feedback && <p className="mt-1 text-sm text-muted">{feedback}</p>}
+                </>
               )}
             </div>
           )}
@@ -627,15 +680,20 @@ function ItemView({
           )}
           {aiHints && !confirmed && (
             <Button size="sm" variant="secondary" disabled={aiLoading === 'hint'} onClick={() => askAi('hint')}>
-              <Lightbulb size={14} /> {aiLoading === 'hint' ? 'Pensando…' : 'Pedir dica'} <DemoTag />
+              <Lightbulb size={14} /> {aiLoading === 'hint' ? 'Pensando…' : 'Pedir dica'} {demo}
             </Button>
           )}
           {aiHints && confirmed && !ai?.perAlternative.length && (
             <Button size="sm" variant="gold" disabled={aiLoading === 'explain'} onClick={() => askAi('explain')}>
-              <BrainCircuit size={14} /> {aiLoading === 'explain' ? 'Gerando explicação…' : 'Explicar com IA'} <DemoTag />
+              <BrainCircuit size={14} /> {aiLoading === 'explain' ? 'Gerando explicação…' : 'Explicar com IA'} {demo}
             </Button>
           )}
           {ans.usedHint && !confirmed && <span className="text-xs text-gold-600">Dica usada: esta pergunta vale metade dos pontos.</span>}
+          {aiError && (
+            <span role="alert" className="text-xs text-rose-600">
+              {aiError}
+            </span>
+          )}
         </div>
       )}
       {revealError && (
@@ -648,7 +706,12 @@ function ItemView({
           <Lightbulb size={16} className="mt-0.5 shrink-0" /> {ai.hint}
         </p>
       )}
-      {ai && confirmed && (
+      {kind === 'discursiva' && aiError && (
+        <p role="alert" className="mt-2 text-xs text-rose-600">
+          {aiError}
+        </p>
+      )}
+      {ai && confirmed && ai.summary && (
         <div className="mt-3 rounded-xl bg-brand-50 p-3 text-sm">
           <p className="font-bold text-brand-700">Resumo da IA</p>
           <p className="mt-1 whitespace-pre-line">{ai.summary}</p>

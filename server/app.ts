@@ -7,6 +7,7 @@ import { auth } from './auth'
 import { db, schema } from './db/client'
 import { sessionMiddleware, type AppEnv } from './middleware'
 import { aiRoutes } from './routes/ai'
+import { cronRoutes } from './routes/cron'
 import { importsRoutes } from './routes/imports'
 import { accountRoutes, profileRoutes } from './routes/profile'
 import { questionsRoutes } from './routes/questions'
@@ -34,6 +35,8 @@ app.use(secureHeaders())
 app.on(['GET', 'POST'], '/auth/*', (c) => auth().handler(c.req.raw))
 
 app.get('/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }))
+// Rotinas agendadas: autenticação própria (CRON_SECRET), sem sessão.
+app.route('/cron', cronRoutes)
 
 app.use(sessionMiddleware)
 // Nunca responde 401: o SPA usa para decidir o redirecionamento (FR-003).

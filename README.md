@@ -56,6 +56,8 @@ Vite 8 · React 19 · React Router 8 · Tailwind 4 · Hono (Vercel Functions, No
 | `npm run dev:api` | SPA + API Hono na mesma origem (http://localhost:3000) — login Google real e banco Neon (requer `.env`) |
 | `npm run dev:full` | Alternativa com `vercel dev` (requer projeto vinculado na Vercel) |
 | `npm run check` | Tipos + lint + testes (sem banco) |
+| `npm run test:e2e` | Testes E2E com Playwright (SPA + API em `localhost:3000`, sessão de teste criada no banco). Com `E2E_AI=1`, inclui os PDFs de exemplo com a IA real |
+| `npm run db:seed:large` | Seed grande e medição do ranking e do painel. Exige um banco separado (`TEST_DATABASE_URL`); com `--shared-db-ok`, mede e apaga tudo no fim |
 | `npm run test:db` | Testes de integração contra o Postgres do `.env` (ou `TEST_DATABASE_URL`, de preferência um branch do Neon): login Google simulado, ranking e exclusão de conta |
 | `npm run build` | Build de produção |
 | `npm run db:generate` / `db:migrate` | Migrações Drizzle (lê `.env.local`/`.env`; usa `DATABASE_URL_UNPOOLED`) |
@@ -92,3 +94,9 @@ O app usa o provider oficial do OpenRouter para o AI SDK (`@openrouter/ai-sdk-pr
 3. Google Cloud Console → credenciais OAuth (redirect: `https://<domínio>/api/auth/callback/google`).
 4. OpenRouter → criar chave, **comprar US$10 de créditos uma vez** (libera 1000 req/dia nos modelos gratuitos) e ativar o guardrail de prompt injection em modo *flag*.
 5. Preencher as variáveis de `.env.example` na Vercel e rodar `npm run db:migrate`.
+
+## Rotina diária (Vercel Cron)
+
+`vercel.json` agenda `GET /api/cron/daily` para as 09:00 UTC. A rotina fecha como abandonados os simulados parados há mais de 24 h e apaga a telemetria de IA com mais de 90 dias.
+
+Ela só roda com a variável `CRON_SECRET` (16+ caracteres) definida na Vercel, que a envia como `Authorization: Bearer …`. Sem a variável, a rota fica desligada.
