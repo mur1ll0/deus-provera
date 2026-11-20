@@ -16,7 +16,7 @@ Substitui o v1 (uma entrada por subitem com `contexto`/`caso_id`), que **não é
 |---|---|---|---|
 | `versao` | `"2.0"` | sim | literal |
 | `origem.arquivo` | string ≤ 200 | não | nome do PDF |
-| `origem.observacoes` | string ≤ 2000 | não | |
+| `origem.observacoes` | string ≤ 2000 | não | resumo do que o agente aproveitou do material (ex.: "Assuntos conforme o índice da p. 2") — FR-R5 |
 | `questoes` | array | sim | 1 a 300 |
 
 ## Questão
@@ -25,7 +25,7 @@ Substitui o v1 (uma entrada por subitem com `contexto`/`caso_id`), que **não é
 |---|---|---|---|
 | `area` | string 1–80 | sim | ex.: Medicina |
 | `disciplina` | string 1–80 | sim | ex.: Ginecologia |
-| `assunto` | string | não | **amplo e repetido** entre questões do mesmo tema; > 80 caracteres é truncado com "…" (não rejeita) |
+| `assunto` | string | não | **amplo e repetido** entre questões do mesmo tema; se o material nomeia o tema (índice, título de seção), usar esse nome com a mesma grafia (FR-R5); > 80 caracteres é truncado com "…" (não rejeita) |
 | `rotulo` | string | não | rótulo original ("QUESTÃO 8"); > 40 caracteres é truncado |
 | `enunciado` | string 1–12000 | sim | caso clínico / texto-base / comando |
 | `perguntas` | array | sim | 1 a 12; se houver mais de 1, **todas** precisam de `texto` |

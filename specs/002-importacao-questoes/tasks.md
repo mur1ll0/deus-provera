@@ -41,6 +41,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T025 `visibility` por questão no commit (padrão `privada`; a tela aplica a escolha "Compartilhar com a comunidade" a todas) (`shared/schemas/import-commit.ts`)
 - [x] T026 Teste de integração: importar o JSON de exemplo duas vezes → 0 duplicatas (SC-007) (`server/__tests__/import-commit.db.test.ts`, `import-routes.db.test.ts` — `npm run test:db`)
 - [x] T027 Trocar `commitImport` do store mock pela chamada real e exibir `{ saved, duplicates }` (`src/features/import/ImportPage.tsx`, `commit.ts`; o store mock segue só no modo protótipo)
+- [x] T062 Prompt do agente externo aproveita as informações de organização do material (índice/temas, títulos de seção, texto-base compartilhado, gabarito em outra página) para o assunto e registra em `origem.observacoes` (FR-R5) (`shared/prompts/external-agent.ts`, `docs/prompts/prompt-agente-externo.md`) + teste (`shared/__tests__/external-agent-prompt.test.ts`)
 
 ## Fase 4 — US2 PDF com IA (P1)
 
