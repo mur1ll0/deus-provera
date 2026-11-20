@@ -2,6 +2,8 @@ import { hc } from 'hono/client'
 import type { AccountRoutes, ProfileRoutes } from '../../server/routes/profile'
 import type { QuestionsRoutes } from '../../server/routes/questions'
 import type { RankingRoutes } from '../../server/routes/ranking'
+import type { SimuladosRoutes } from '../../server/routes/simulados'
+import type { StatsRoutes } from '../../server/routes/stats'
 import type { TaxonomyRoutes } from '../../server/routes/taxonomy'
 
 /**
@@ -61,4 +63,6 @@ export const api = {
   profile: hc<ProfileRoutes>('/api/profile', { fetch: apiFetch }),
   account: hc<AccountRoutes>('/api/account', { fetch: apiFetch }),
   ranking: hc<RankingRoutes>('/api/ranking', { fetch: apiFetch }),
+  simulados: hc<SimuladosRoutes>('/api/simulados', { fetch: apiFetch }),
+  stats: hc<StatsRoutes>('/api/stats', { fetch: apiFetch }),
 }

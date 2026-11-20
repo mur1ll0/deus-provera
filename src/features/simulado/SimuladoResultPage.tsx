@@ -1,35 +1,112 @@
 import clsx from 'clsx'
 import { Award, BrainCircuit, Check, ChevronDown, Clock, Hourglass, Minus, RotateCcw, Sparkles, Target, Timer, X } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
-import type { AnswerKind, ItemAnswer, Question, QuestionItem, SimuladoAttempt } from '@shared/domain'
-import { GRADER_WEIGHT, MODE_MULTIPLIER } from '@shared/scoring'
+import { Link, Navigate, useNavigate, useParams } from 'react-router'
+import type { AnswerKind, ItemAnswer, Question, QuestionItem, SimuladoAttempt, SimuladoConfig } from '@shared/domain'
+import { GRADER_WEIGHT, MODE_MULTIPLIER, type SimuladoScore } from '@shared/scoring'
 import { presentAs } from '@shared/simulado'
+import { useAuth } from '@/app/auth-context'
+import { FullScreen } from '@/app/RequireAuth'
 import { Badge, Button, Card, DemoTag, EmptyState, PageHeader, ProgressRing } from '@/components/ui'
+import { ApiError } from '@/lib/api'
 import { formatDuration, LETTERS, pct } from '@/lib/format'
 import { aiExplain, aiGradeDiscursive, type AiExplanation } from '@/mocks/ai'
 import { useStore } from '@/mocks/store'
+import { createRemote, fetchResult, kindsOf, postGrade, toAttempt, toQuestions } from './remote'
 import { computeAttemptScore } from './scoringAdapter'
 
+/** O que a tela de resultado precisa — vindo da API real ou do store do protótipo. */
+interface ResultData {
+  attempt: SimuladoAttempt
+  qs: Question[]
+  score: SimuladoScore
+  meId: string
+  kindOf: (it: QuestionItem) => AnswerKind
+  disciplineName: (q: Question) => string
+  /** Correção posterior pelos pontos de acerto (`checked`) — ou, só no protótipo, pela IA simulada. */
+  grade: (it: QuestionItem, g: { checked: boolean[] } | { score: number; gradedBy: 'ia' }) => Promise<void>
+  startRetry: (cfg: SimuladoConfig) => Promise<string | null>
+  aiGradeDemo: boolean
+}
+
+const unavailable = (
+  <EmptyState icon={<Timer />} title="Resultado indisponível">
+    <Link className="font-bold text-brand-600" to="/simulados">
+      Voltar aos simulados
+    </Link>
+  </EmptyState>
+)
+
 export function SimuladoResultPage() {
-  const { id } = useParams()
+  const { id = '' } = useParams()
+  return useAuth().mode === 'real' ? <RemoteResult id={id} /> : <LocalResult id={id} />
+}
+
+/** API real (spec 003 › T016/T027): resultado e correção posterior no servidor. */
+function RemoteResult({ id }: { id: string }) {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const q = useQuery({ queryKey: ['simulado-result', id], queryFn: () => fetchResult(id), retry: false })
+  const grade = useMutation({
+    mutationFn: ({ itemId, checked }: { itemId: string; checked: boolean[] }) => postGrade(id, itemId, checked),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['simulado-result', id] })
+      void queryClient.invalidateQueries({ queryKey: ['simulados'] })
+    },
+  })
+  const data = useMemo<ResultData | null>(() => {
+    if (!q.data || !user) return null
+    const kinds = kindsOf(q.data)
+    return {
+      attempt: toAttempt(q.data, user.id),
+      qs: toQuestions(q.data, user.id),
+      score: q.data.score,
+      meId: user.id,
+      kindOf: (it) => kinds.get(it.id) ?? 'discursiva',
+      disciplineName: (x) => x.disciplineId,
+      grade: async (it, g) => {
+        if ('checked' in g) await grade.mutateAsync({ itemId: it.id, checked: g.checked })
+      },
+      startRetry: async (cfg) => (await createRemote(cfg)).id,
+      aiGradeDemo: false,
+    }
+  }, [q.data, user, grade])
+  if (q.error instanceof ApiError && q.error.status === 409) return <Navigate to={`/simulados/${id}`} replace />
+  if (q.error) return unavailable
+  if (!data) return <FullScreen>Carregando resultado…</FullScreen>
+  return <ResultBody data={data} />
+}
+
+/** Protótipo sem API: store em memória. */
+function LocalResult({ id }: { id: string }) {
   const store = useStore()
-  const navigate = useNavigate()
   const attempt = store.attempts.find((a) => a.id === id)
   const byId = useMemo(() => new Map(store.questions.map((q) => [q.id, q])), [store.questions])
+  if (!attempt || !attempt.finishedAt) return unavailable
+  const data: ResultData = {
+    attempt,
+    qs: attempt.questionIds.map((qid) => byId.get(qid)).filter(Boolean) as Question[],
+    score: computeAttemptScore(attempt, byId, store.me.id),
+    meId: store.me.id,
+    kindOf: (it) => presentAs(it, attempt.config.answerFormat),
+    disciplineName: (x) => store.disciplineName(x.disciplineId),
+    grade: async (it, g) => {
+      const patch: Partial<ItemAnswer> = 'checked' in g ? { score: g.checked.filter(Boolean).length / Math.max(1, g.checked.length), gradedBy: 'checklist' } : g
+      const next: SimuladoAttempt = { ...attempt, answers: { ...attempt.answers, [it.id]: { ...(attempt.answers[it.id] ?? { itemId: it.id, score: 0 }), ...patch } } }
+      store.saveAttempt({ ...next, points: computeAttemptScore(next, byId, store.me.id).total })
+    },
+    startRetry: async (cfg) => store.startSimulado(cfg)?.id ?? null,
+    aiGradeDemo: true,
+  }
+  return <ResultBody data={data} />
+}
+
+function ResultBody({ data }: { data: ResultData }) {
+  const navigate = useNavigate()
   const [open, setOpen] = useState<string | null>(null)
-
-  if (!attempt || !attempt.finishedAt)
-    return (
-      <EmptyState icon={<Timer />} title="Resultado indisponível">
-        <Link className="font-bold text-brand-600" to="/simulados">
-          Voltar aos simulados
-        </Link>
-      </EmptyState>
-    )
-
-  const qs = attempt.questionIds.map((qid) => byId.get(qid)).filter(Boolean) as Question[]
-  const score = computeAttemptScore(attempt, byId, store.me.id)
+  const [retryError, setRetryError] = useState<string | null>(null)
+  const { attempt, qs, score } = data
   const ans = (it: QuestionItem): ItemAnswer => attempt.answers[it.id] ?? { itemId: it.id, score: 0 }
   const allItems = qs.flatMap((q) => q.items)
   const pending = allItems.filter((it) => ans(it).score == null)
@@ -42,19 +119,15 @@ export function SimuladoResultPage() {
 
   const byTopic = new Map<string, { n: number; s: number }>()
   for (const q of qs) {
-    const k = store.disciplineName(q.disciplineId) + (q.topic ? ` · ${q.topic}` : '')
+    const k = data.disciplineName(q) + (q.topic ? ` · ${q.topic}` : '')
     const cur = byTopic.get(k) ?? { n: 0, s: 0 }
     byTopic.set(k, { n: cur.n + q.items.length, s: cur.s + q.items.reduce((s, it) => s + (ans(it).score ?? 0), 0) })
   }
 
-  function grade(it: QuestionItem, patch: Partial<ItemAnswer>) {
-    const next: SimuladoAttempt = { ...attempt!, answers: { ...attempt!.answers, [it.id]: { ...ans(it), ...patch } } }
-    store.saveAttempt({ ...next, points: computeAttemptScore(next, byId, store.me.id).total })
-  }
-
-  function retryWrong() {
+  async function retryWrong() {
+    setRetryError(null)
     const wrong = qs.filter((q) => qScore(q) < 0.5)
-    const created = store.startSimulado({
+    const created = await data.startRetry({
       ...attempt!.config,
       mode: 'treino',
       reveal: 'imediato',
@@ -64,8 +137,11 @@ export function SimuladoResultPage() {
       disciplineIds: [],
       topics: [...new Set(wrong.map((q) => q.topic).filter(Boolean) as string[])],
       count: Math.max(1, wrong.length),
+    }).catch((err: Error) => {
+      setRetryError(err.message)
+      return null
     })
-    if (created) navigate(`/simulados/${created.id}`)
+    if (created) navigate(`/simulados/${created}`)
   }
 
   return (
@@ -75,7 +151,7 @@ export function SimuladoResultPage() {
         title={score.accuracy >= 0.7 ? 'Mandou bem!' : score.accuracy >= 0.5 ? 'Bom caminho — revise os erros' : 'Hora de revisar'}
         actions={
           <>
-            <Button variant="secondary" onClick={retryWrong} disabled={correctItems === allItems.length}>
+            <Button variant="secondary" onClick={() => void retryWrong()} disabled={correctItems === allItems.length}>
               <RotateCcw size={16} /> Treinar o que errei
             </Button>
             <Link to="/simulados">
@@ -85,6 +161,11 @@ export function SimuladoResultPage() {
         }
       />
 
+      {retryError && (
+        <p role="alert" className="mb-4 text-sm text-rose-600">
+          {retryError}
+        </p>
+      )}
       <div className="grid gap-4 md:grid-cols-[auto_1fr]">
         <Card className="flex items-center gap-5 p-5">
           <ProgressRing value={score.accuracy} size={110} stroke={11} />
@@ -146,7 +227,7 @@ export function SimuladoResultPage() {
                     <div className="space-y-4 px-2 pb-4 text-sm sm:pl-13">
                       <p className="whitespace-pre-line rounded-xl bg-brand-50/60 p-3">{q.stem}</p>
                       {q.items.map((it, j) => (
-                        <ItemReview key={it.id} item={it} index={j} multi={q.items.length > 1} topic={q.topic} kind={presentAs(it, attempt.config.answerFormat)} a={ans(it)} onGrade={(p) => grade(it, p)} />
+                        <ItemReview key={it.id} item={it} index={j} multi={q.items.length > 1} topic={q.topic} kind={data.kindOf(it)} a={ans(it)} onGrade={(g) => data.grade(it, g)} aiGradeDemo={data.aiGradeDemo} />
                       ))}
                     </div>
                   )}
@@ -224,6 +305,7 @@ function ItemReview({
   kind,
   a,
   onGrade,
+  aiGradeDemo,
 }: {
   item: QuestionItem
   index: number
@@ -231,10 +313,23 @@ function ItemReview({
   topic?: string
   kind: AnswerKind
   a: ItemAnswer
-  onGrade: (p: Partial<ItemAnswer>) => void
+  onGrade: (g: { checked: boolean[] } | { score: number; gradedBy: 'ia' }) => Promise<void>
+  aiGradeDemo: boolean
 }) {
   const [ai, setAi] = useState<AiExplanation | null>(null)
   const [loading, setLoading] = useState(false)
+  const [gradeError, setGradeError] = useState<string | null>(null)
+  async function submit(g: { checked: boolean[] } | { score: number; gradedBy: 'ia' }) {
+    setLoading(true)
+    setGradeError(null)
+    try {
+      await onGrade(g)
+    } catch (err) {
+      setGradeError((err as Error).message || 'Não foi possível salvar a correção.')
+    } finally {
+      setLoading(false)
+    }
+  }
   const [checked, setChecked] = useState<boolean[]>((item.keyPoints ?? []).map(() => false))
   const alts = item.alternatives ?? []
   const status = a.score == null ? 'pending' : a.score >= 0.5 ? 'ok' : a.score > 0 ? 'partial' : 'wrong'
@@ -316,23 +411,28 @@ function ItemReview({
             )}
             {a.score == null ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => onGrade({ score: checked.filter(Boolean).length / Math.max(1, checked.length), gradedBy: 'checklist' })}>
-                  Confirmar autocorreção
+                <Button size="sm" disabled={loading} onClick={() => void submit({ checked })}>
+                  {loading ? 'Salvando…' : 'Confirmar autocorreção'}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="gold"
-                  disabled={loading || !a.text?.trim()}
-                  onClick={async () => {
-                    setLoading(true)
-                    const r = await aiGradeDiscursive(a.text ?? '', item.keyPoints ?? [])
-                    setChecked(r.matched)
-                    onGrade({ score: r.score, gradedBy: 'ia' })
-                    setLoading(false)
-                  }}
-                >
-                  <Sparkles size={14} /> {loading ? 'Corrigindo…' : 'Corrigir com IA'} <DemoTag />
-                </Button>
+                {aiGradeDemo && (
+                  <Button
+                    size="sm"
+                    variant="gold"
+                    disabled={loading || !a.text?.trim()}
+                    onClick={async () => {
+                      const r = await aiGradeDiscursive(a.text ?? '', item.keyPoints ?? [])
+                      setChecked(r.matched)
+                      await submit({ score: r.score, gradedBy: 'ia' })
+                    }}
+                  >
+                    <Sparkles size={14} /> {loading ? 'Corrigindo…' : 'Corrigir com IA'} <DemoTag />
+                  </Button>
+                )}
+                {gradeError && (
+                  <p role="alert" className="w-full text-xs text-rose-600">
+                    {gradeError}
+                  </p>
+                )}
               </div>
             ) : (
               <p className="mt-2 font-display text-sm font-bold text-emerald-700">

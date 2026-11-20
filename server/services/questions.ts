@@ -15,7 +15,7 @@ import { slugify } from './taxonomy'
 const { question, questionItem, alternative, questionGroup, discipline, area } = schema
 
 /** Perguntas + alternativas das questões, no formato do domínio. */
-async function loadItems(questionIds: string[]): Promise<Map<string, QuestionItem[]>> {
+export async function loadItems(questionIds: string[]): Promise<Map<string, QuestionItem[]>> {
   const out = new Map<string, QuestionItem[]>()
   if (!questionIds.length) return out
   const items = await db().select().from(questionItem).where(inArray(questionItem.questionId, questionIds)).orderBy(asc(questionItem.position))

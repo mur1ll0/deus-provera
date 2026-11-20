@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
@@ -44,6 +44,16 @@ const createSchema = z.discriminatedUnion('source', [
   // Lote digitado na tela (T048): nasce em revisão e é salvo pelo mesmo /commit.
   z.object({ source: z.literal('manual'), fileName: z.string().max(200).optional() }),
 ])
+
+/** Rascunho da revisão (cards + rascunhos), salvo automaticamente — T042. */
+const draftSchema = z.object({
+  review: z.object({
+    cards: z.array(z.record(z.string(), z.unknown())).max(300),
+    drafts: z.record(z.string(), z.unknown()),
+    source: z.enum(['pdf_ia', 'agente_externo', 'manual']),
+    fileName: z.string().max(200).optional(),
+  }),
+})
 
 /** Um lote de recortes JPEG/PNG (base64 sem `data:`), ≤ 3 por requisição para caber nos 4,5 MB. */
 const imagesSchema = z.object({
@@ -239,7 +249,26 @@ export const importsRoutes = new Hono<AppEnv>()
       cards: job.status === 'revisao' ? s.cards : undefined,
       drafts: job.status === 'revisao' ? s.drafts : undefined,
       payload: (job.state as { payload?: unknown }).payload,
+      reviewDraft: job.status === 'revisao' ? (job.state as { reviewDraft?: unknown }).reviewDraft : undefined,
     })
+  })
+
+  /*
+   * Autosave da revisão (T042): guarda cards + rascunhos editados no job, para retomar depois.
+   * Não valida o conteúdo a fundo — a validação completa é a do /commit. Só jobs em revisão.
+   */
+  .patch('/:id/draft', async (c) => {
+    const user = c.get('user')!
+    const body = draftSchema.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) throw new HTTPException(400, { message: body.error.issues[0]?.message ?? 'Rascunho inválido.' })
+    if (JSON.stringify(body.data.review).length > 3_500_000) throw new HTTPException(413, { message: 'Rascunho grande demais para salvar automaticamente.' })
+    const [updated] = await db()
+      .update(schema.importJob)
+      .set({ state: sql`${schema.importJob.state} || jsonb_build_object('reviewDraft', ${JSON.stringify(body.data.review)}::jsonb)`, updatedAt: new Date() })
+      .where(and(eq(schema.importJob.id, c.req.param('id')), eq(schema.importJob.ownerId, user.id), eq(schema.importJob.status, 'revisao')))
+      .returning({ id: schema.importJob.id })
+    if (!updated) throw new HTTPException(409, { message: 'Esta importação não está mais em revisão.' })
+    return c.json({ ok: true, savedAt: new Date().toISOString() })
   })
 
   .get('/', async (c) => {

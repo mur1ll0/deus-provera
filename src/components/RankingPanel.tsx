@@ -1,34 +1,17 @@
 import clsx from 'clsx'
 import { Crown, Info, Trophy } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router'
-import { RANKING } from '@/mocks/data'
-import { useStore } from '@/mocks/store'
+import { useRankingData, type Period, type RankRow as Row } from '@/features/dashboard/data'
 import { Avatar, Card, Segmented } from './ui'
 
-type Period = 'semana' | 'mes' | 'geral'
-
-// No protótipo, semana/mês são frações determinísticas do total geral.
-const PERIOD_FACTOR: Record<Period, (i: number) => number> = {
-  semana: (i) => 0.08 + ((i * 37) % 11) / 100,
-  mes: (i) => 0.3 + ((i * 17) % 13) / 100,
-  geral: () => 1,
-}
-
-export function RankingPanel({ limit = 8, className }: { limit?: number; className?: string }) {
-  const { me } = useStore()
-  const [period, setPeriod] = useState<Period>('semana')
-
-  const rows = useMemo(
-    () =>
-      RANKING.map((r, i) => ({ ...r, points: Math.round(r.points * PERIOD_FACTOR[period](i)) }))
-        .sort((a, b) => b.points - a.points || b.grade - a.grade)
-        .map((r, i) => ({ ...r, pos: i + 1 })),
-    [period],
-  )
-  const mine = rows.find((r) => r.userId === me.id)
+export function RankingPanel({ limit = 8, className, period: controlled, onPeriod }: { limit?: number; className?: string; period?: Period; onPeriod?: (p: Period) => void }) {
+  const [own, setOwn] = useState<Period>('semana')
+  const period = controlled ?? own
+  const setPeriod = onPeriod ?? setOwn
+  const { rows, me: mine, loading, error } = useRankingData(period)
   const top = rows.slice(0, limit)
-  const meInTop = top.some((r) => r.userId === me.id)
+  const meInTop = top.some((r) => r.me)
 
   return (
     <Card className={clsx('p-5', className)}>
@@ -50,9 +33,12 @@ export function RankingPanel({ limit = 8, className }: { limit?: number; classNa
           { value: 'geral', label: 'Geral' },
         ]}
       />
+      {loading && <p className="py-4 text-center text-sm text-muted">Carregando…</p>}
+      {error && <p className="py-4 text-center text-sm text-rose-600">{error}</p>}
+      {!loading && !error && rows.length === 0 && <p className="py-4 text-center text-sm text-muted">Ninguém pontuou neste período ainda. Faça um simulado e seja o primeiro!</p>}
       <ol className="space-y-1">
         {top.map((r) => (
-          <RankRow key={r.userId} row={r} isMe={r.userId === me.id} />
+          <RankRow key={r.userId} row={r} isMe={r.me} />
         ))}
       </ol>
       {!meInTop && mine && (
@@ -71,7 +57,7 @@ export function RankingPanel({ limit = 8, className }: { limit?: number; classNa
   )
 }
 
-function RankRow({ row, isMe }: { row: (typeof RANKING)[number] & { pos: number }; isMe: boolean }) {
+function RankRow({ row, isMe }: { row: Row; isMe: boolean }) {
   return (
     <li
       className={clsx(
@@ -82,11 +68,12 @@ function RankRow({ row, isMe }: { row: (typeof RANKING)[number] & { pos: number 
       <span className={clsx('w-6 text-center font-display text-sm font-extrabold', !isMe && row.pos <= 3 && 'text-gold-600')}>
         {row.pos === 1 ? <Crown size={16} className="mx-auto" /> : row.pos}
       </span>
-      <Avatar seed={row.avatarSeed} size="sm" />
+      <Avatar seed={row.avatarSeed} src={row.image} size="sm" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-bold">{isMe ? 'Você' : row.name}</span>
         <span className={clsx('block truncate text-[11px]', isMe ? 'text-brand-100' : 'text-muted')}>
-          nota {row.grade.toFixed(1)} · {row.institution}
+          {row.grade != null ? `nota ${row.grade.toFixed(1)}` : `${row.simulados} simulados`}
+          {row.institution ? ` · ${row.institution}` : ''}
         </span>
       </span>
       <span className="text-right font-display text-sm font-bold tabular-nums">{row.points.toLocaleString('pt-BR')}</span>

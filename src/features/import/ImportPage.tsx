@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { Bot, CheckCircle2, ClipboardCopy, FileText, FileUp, ImageIcon, Loader2, PencilLine, PartyPopper, ShieldAlert, Timer, Trash2, UploadCloud } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { Visibility } from '@shared/domain'
 import { inspectText } from '@shared/guardrails'
@@ -16,7 +16,7 @@ import { QuestionEditor } from '@/features/questions/QuestionEditor'
 import { useAuth } from '@/app/auth-context'
 import { apiFetch, unwrap } from '@/lib/api'
 import { draftsFromImportFile, draftsFromSegments, draftsFromServerJob, emptyDraft, type ReviewState } from './drafts'
-import { CommitError, commitReview, type ReviewProblem } from './commit'
+import { CommitError, commitReview, createReviewJob, saveReviewDraft, type ReviewProblem } from './commit'
 import { batchPageImages, type ImportJobView } from './importJob'
 import { JobProgressCard } from './JobProgress'
 import type { PageImageCrop } from './pageImages'
@@ -47,6 +47,29 @@ export function ImportPage() {
   const real = useAuth().mode === 'real'
   const job = useImportJob()
   const [jobVision, setJobVision] = useState(false)
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
+
+  // Autosave da revisão (T042): 2 s depois da última edição, no job do servidor.
+  useEffect(() => {
+    if (!real || step !== 'revisao' || !review?.jobId) return
+    const t = setTimeout(() => {
+      saveReviewDraft(review).then(
+        () => setDraftSavedAt(new Date()),
+        () => undefined, // sem rede: tenta de novo na próxima edição
+      )
+    }, 2000)
+    return () => clearTimeout(t)
+  }, [real, step, review])
+
+  /** Agente externo: cria o job já na revisão (JSON revalidado no servidor) para o autosave funcionar. */
+  async function openAgentReview(state: ReviewState) {
+    await process(() => state, false)
+    if (!real || !state.payload) return
+    createReviewJob({ source: 'agente_externo', payload: state.payload }).then(
+      (jobId) => setReview((cur) => (cur && cur.payload === state.payload ? { ...cur, jobId } : cur)),
+      () => undefined, // o commit cria o job se ainda faltar
+    )
+  }
 
   // Salvar de verdade (T027): POST /api/imports/:id/commit; erros de validação voltam para a revisão.
   const commit = useMutation({
@@ -68,7 +91,12 @@ export function ImportPage() {
   /** Job terminou no servidor → rascunhos + cards da IA na revisão. */
   function openJobReview(view: ImportJobView | null, fileName?: string) {
     if (!view) return // erro/cota/cancelado: o cartão de progresso mostra o que fazer
-    const base = view.payload ? draftsFromImportFile(view.payload, visibility) : draftsFromServerJob(view, visibility, fileName)
+    // Revisão salva automaticamente (T042) tem prioridade: reabre com as edições feitas.
+    const base = view.reviewDraft
+      ? (view.reviewDraft as unknown as ReviewState)
+      : view.payload
+        ? draftsFromImportFile(view.payload, visibility)
+        : draftsFromServerJob(view, visibility, fileName)
     setReview({ ...base, jobId: view.id })
     setProblems([])
     setStep('revisao')
@@ -157,7 +185,7 @@ export function ImportPage() {
           {real && <OpenImports hide={job.pending?.id} onOpen={(j) => resumeJob(j.id, j.fileName ?? undefined)} />}
 
           {method === 'pdf' && <PdfPanel real={real} onProcess={processPdf} />}
-          {method === 'agente' && <AgentPanel onImport={(r) => process(() => draftsFromImportFile(r.data!, visibility), false)} />}
+          {method === 'agente' && <AgentPanel onImport={(r) => void openAgentReview(draftsFromImportFile(r.data!, visibility))} />}
           {method === 'manual' && <ManualPanel visibility={visibility} onDone={(s) => process(() => s, false)} />}
         </>
       )}
@@ -182,6 +210,11 @@ export function ImportPage() {
           <PipelineProgress index={pipelineIndex} />
         ))}
 
+      {step === 'revisao' && review && real && review.jobId && (
+        <p className="mb-2 text-right text-xs text-muted" aria-live="polite">
+          {draftSavedAt ? `Rascunho salvo às ${draftSavedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — dá para fechar e continuar depois` : 'Suas edições são salvas automaticamente'}
+        </p>
+      )}
       {step === 'revisao' && review && (
         <ReviewBoard
           state={review}

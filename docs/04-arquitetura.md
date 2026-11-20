@@ -141,8 +141,8 @@ sequenceDiagram
 | GET | `/api/simulados/:id` | Tentativa (sem gabarito na prova em andamento) | 003 |
 | PUT | `/api/simulados/:id/answers/:qid` | Salva resposta + tempo | 003 |
 | POST | `/api/simulados/:id/finish` | Finaliza, corrige, pontua | 003 |
-| GET | `/api/stats/me` | Dados do dashboard | 004 |
-| GET | `/api/ranking?periodo=semana\|mes\|geral&area=` | Ranking | 004 |
+| GET | `/api/stats/me` | Painel do estudante (KPIs, nota, sequência, mapa por assunto, atividade, recentes) | 004 |
+| GET | `/api/ranking?periodo=semana\|mes\|geral` | Ranking (`rows` + linha do usuário em `me`) | 004 |
 | POST | `/api/ai/explain/:questionId` | Dica/explicação (cache compartilhado) | 005 |
 | POST | `/api/ai/grade` | Correção de discursiva | 005 |
 | POST | `/api/ai/distractors` | Gerar alternativas incorretas (editor) | 005 |

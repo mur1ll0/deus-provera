@@ -1,25 +1,27 @@
 import clsx from 'clsx'
 import { BrainCircuit, Eye, EyeOff, GraduationCap, History, Lock, Play, Repeat, Shuffle, Users, User } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import type { SimuladoConfig } from '@shared/domain'
 import { BASE_POINTS, MODE_MULTIPLIER, PROVA_RULES } from '@shared/scoring'
-import { autoTimeLimitMin, presentAs } from '@shared/simulado'
+import { autoTimeLimitMin } from '@shared/simulado'
+import { useAuth } from '@/app/auth-context'
 import { Badge, Button, Card, PageHeader } from '@/components/ui'
-import { formatDate, pct } from '@/lib/format'
-import { MY_HISTORY } from '@/mocks/data'
-import { useStore } from '@/mocks/store'
+import { useSetupSource } from './setupSource'
 
 
 export function SimuladoSetupPage() {
-  const store = useStore()
-  const navigate = useNavigate()
+  const real = useAuth().mode === 'real'
+  // "Treinar pontos fracos" (painel) chega com ?assunto=… pré-selecionado (spec 004 › T016).
+  const [params] = useSearchParams()
+  const focus = params.get('assunto')
   const [cfg, setCfg] = useState<SimuladoConfig>({
     mode: 'treino',
     scope: 'minhas_e_comunidade',
-    areaId: 'a-med',
+    // Protótipo: área "Medicina" dos dados simulados; API real: todas as áreas.
+    areaId: real || focus ? null : 'a-med',
     disciplineIds: [],
-    topics: [],
+    topics: focus ? [focus] : [],
     answerFormat: 'original',
     count: 10,
     timeLimitMin: null,
@@ -31,30 +33,27 @@ export function SimuladoSetupPage() {
   const set = <K extends keyof SimuladoConfig>(k: K, v: SimuladoConfig[K]) => setCfg((c) => ({ ...c, [k]: v }))
 
   const isProva = cfg.mode === 'prova'
-  const disciplines = store.disciplines.filter((d) => !cfg.areaId || d.areaId === cfg.areaId)
-  const topics = useMemo(() => {
-    const pool = store.poolFor({ ...cfg, topics: [] })
-    return [...new Set(pool.map((q) => q.topic).filter(Boolean) as string[])].sort()
-  }, [store, cfg])
-  const pool = store.poolFor(cfg)
-  const count = Math.min(cfg.count, pool.length)
-  const estMin = autoTimeLimitMin(pool.slice(0, count).flatMap((q) => q.items.map((it) => presentAs(it, cfg.answerFormat))))
+  const src = useSetupSource(cfg, real)
+  const disciplines = src.disciplines.filter((d) => !cfg.areaId || d.areaId === cfg.areaId)
+  const topics = src.topics
+  const available = src.available
+  const count = Math.min(cfg.count, available)
+  const estMin = autoTimeLimitMin(src.kinds(count))
   const timeLimit = isProva ? (autoTime ? estMin : cfg.timeLimitMin ?? estMin) : cfg.timeLimitMin
   const maxPoints = Math.round(count * BASE_POINTS.media * MODE_MULTIPLIER[cfg.mode])
   const provaTooShort = isProva && count < PROVA_RULES.minQuestions
 
   function start() {
-    const attempt = store.startSimulado({
+    src.start({
       ...cfg,
       count,
-      timeLimitMin: timeLimit ?? null,
+      // Prova com tempo automático: o servidor calcula pelo sorteio real (null = automático).
+      timeLimitMin: isProva && autoTime && real ? null : (timeLimit ?? null),
       reveal: isProva ? 'final' : cfg.reveal,
       aiHints: isProva ? false : cfg.aiHints,
+      topics: isProva ? [] : cfg.topics,
     })
-    if (attempt) navigate(`/simulados/${attempt.id}`)
   }
-
-  const myAttempts = store.attempts.filter((a) => a.finishedAt).reverse()
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -99,7 +98,7 @@ export function SimuladoSetupPage() {
 
           <Section title="Área">
             <div className="flex flex-wrap gap-2">
-              {store.areas.map((a) => (
+              {src.areas.map((a) => (
                 <Chip key={a.id} active={cfg.areaId === a.id} onClick={() => setCfg((c) => ({ ...c, areaId: a.id, disciplineIds: [], topics: [] }))}>
                   {a.name}
                 </Chip>
@@ -157,11 +156,11 @@ export function SimuladoSetupPage() {
             </p>
           </Section>
 
-          <Section title={`Quantidade: ${count} questões`} hint={`${pool.length} disponíveis com esses filtros`}>
+          <Section title={`Quantidade: ${count} ${count === 1 ? 'questão' : 'questões'}`} hint={src.loading ? 'calculando…' : `${available} disponíveis com esses filtros`}>
             <input
               type="range"
               min={1}
-              max={Math.max(1, Math.min(100, pool.length))}
+              max={Math.max(1, Math.min(100, available))}
               value={count}
               onChange={(e) => set('count', Number(e.target.value))}
               className="w-full accent-brand-600"
@@ -219,7 +218,7 @@ export function SimuladoSetupPage() {
               <Badge tone={isProva ? 'brand' : 'neutral'}>{isProva ? 'Prova' : 'Treino'}</Badge>
             </div>
             <dl className="mt-4 space-y-2 text-sm">
-              <Row label="Questões" value={`${count} de ${pool.length}`} />
+              <Row label="Questões" value={`${count} de ${available}`} />
               <Row label="Tempo" value={timeLimit ? `${timeLimit} min` : 'livre'} />
               <Row label="Gabarito" value={isProva || cfg.reveal === 'final' ? 'ao final' : 'a cada questão'} />
               <Row label="Dicas IA" value={!isProva && cfg.aiHints ? 'sim' : 'não'} />
@@ -234,10 +233,15 @@ export function SimuladoSetupPage() {
                 <Lock size={14} className="shrink-0" /> Provas com menos de {PROVA_RULES.minQuestions} questões não contam para o ranking.
               </p>
             )}
-            <Button size="lg" className="mt-4 w-full" disabled={!pool.length} onClick={start}>
-              <Play size={18} /> Começar
+            <Button size="lg" className="mt-4 w-full" disabled={!available || src.starting || src.loading} onClick={start}>
+              <Play size={18} /> {src.starting ? 'Sorteando…' : 'Começar'}
             </Button>
-            {!pool.length && <p className="mt-2 text-center text-xs text-rose-600">Nenhuma questão com esses filtros.</p>}
+            {!available && !src.loading && <p className="mt-2 text-center text-xs text-rose-600">Nenhuma questão com esses filtros.</p>}
+            {src.error && (
+              <p role="alert" className="mt-2 text-center text-xs text-rose-600">
+                {src.error}
+              </p>
+            )}
           </Card>
         </aside>
       </div>
@@ -245,26 +249,19 @@ export function SimuladoSetupPage() {
       {/* Histórico */}
       <Card className="mt-8 p-5">
         <h2 className="mb-3 font-bold">Histórico</h2>
+        {src.history.length === 0 && <p className="text-sm text-muted">Nenhum simulado ainda — monte o primeiro acima.</p>}
         <ul className="divide-y divide-line">
-          {myAttempts.map((a) => (
-            <li key={a.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
-              <Badge tone={a.config.mode === 'prova' ? 'brand' : 'neutral'}>{a.config.mode}</Badge>
-              <span className="flex-1 font-bold">Simulado de {a.questionIds.length} questões</span>
-              <span className="text-muted">{formatDate(a.startedAt)}</span>
-              <span className="font-display font-bold text-brand-700">+{a.points ?? 0} pts</span>
-              <Link className="text-xs font-bold text-brand-600 hover:underline" to={`/simulados/${a.id}/resultado`}>
-                ver gabarito
-              </Link>
-            </li>
-          ))}
-          {MY_HISTORY.map((h) => (
+          {src.history.map((h) => (
             <li key={h.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
               <Badge tone={h.mode === 'prova' ? 'brand' : 'neutral'}>{h.mode}</Badge>
-              <span className="flex-1 font-bold">{h.title}</span>
-              <span className="text-muted">
-                {formatDate(h.date)} · {h.questions} q · {pct(h.accuracy)}
-              </span>
-              <span className="font-display font-bold text-brand-700">+{h.points} pts</span>
+              <span className="min-w-0 flex-1 font-bold">{h.title}</span>
+              <span className="text-muted">{h.detail}</span>
+              {h.points != null && <span className="font-display font-bold text-brand-700">+{h.points} pts</span>}
+              {h.href && (
+                <Link className="text-xs font-bold text-brand-600 hover:underline" to={h.href}>
+                  {h.cta}
+                </Link>
+              )}
             </li>
           ))}
         </ul>

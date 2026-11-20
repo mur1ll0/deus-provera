@@ -7,8 +7,8 @@ import { getRanking } from '../services/ranking'
 export const rankingRoutes = new Hono<AppEnv>().use(requireUser).get('/', async (c) => {
   const periodo = z.enum(['semana', 'mes', 'geral']).catch('semana').parse(c.req.query('periodo'))
   // Semana começa na segunda 00:00 de Brasília (shared/simulado.ts, testado).
-  const rows = await getRanking(c.get('user')!.id, rankingPeriodStart(periodo))
-  return c.json({ periodo, rows })
+  const ranking = await getRanking(c.get('user')!.id, rankingPeriodStart(periodo))
+  return c.json({ periodo, ...ranking })
 })
 
 export type RankingRoutes = typeof rankingRoutes

@@ -127,3 +127,19 @@ O protótipo (Fase 0) já cobre, com dados mock e em `localStorage`:
 - resultado: acerto, pontos com detalhamento, tempos, por assunto, gabarito expansível, correção posterior por checklist/IA e "Treinar o que errei".
 
 No servidor existem `POST /api/simulados` (sorteio + prazo) e `POST /api/simulados/:id/finish` (pontuação + ledger). Falta o restante do contrato.
+
+## Estado atual (2026-11-20, S3)
+
+- API completa em `server/services/simulados.ts`, com contrato v2 em [contracts/api-simulados.md](contracts/api-simulados.md):
+  - prévia, criação, tentativa sem gabarito, respostas por pergunta, tempo e marcação por questão;
+  - revelação no treino, finalização idempotente (ledger com índice único), resultado, correção posterior e histórico.
+- **Telas na API real:**
+  - O executor (`SimuladoRunnerPage`) fala com um `RunnerBackend`: `remoteBackend` na API, `localBackend` no protótipo.
+  - Configuração (`useSetupSource`) e resultado (`RemoteResult`) também.
+- **Testes:** `server/__tests__/simulados.db.test.ts` (`npm run test:db`).
+- **Validado no navegador:** treino completo (revelar, autocorrigir, recarregar e retomar, finalizar, resultado), também em 375 px.
+- **Pendente:**
+  - IA no executor (dicas, explicação e correção por IA — spec 005; hoje marcadas DEMO);
+  - cron de `abandonado` (T032);
+  - acessibilidade do cronômetro (T033);
+  - E2E com Playwright (T034).

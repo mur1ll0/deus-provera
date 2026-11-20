@@ -146,3 +146,16 @@ O protótipo cobre o layout completo:
 - página de ranking com pódio e tabela.
 
 Os dados são mock (`src/mocks/data.ts`). No servidor existe `GET /api/ranking` com período e opt-out. A rota `/api/me/dashboard` e a tela de perfil ainda não existem.
+
+## Estado atual (2026-11-20, S3)
+
+- **Painel:** `GET /api/stats/me` (`server/services/stats.ts`), com as regras de data e sequência em `shared/stats.ts` (testadas).
+- **Ranking:** `getRanking` com nota de 30 dias, simulados e posição (`me`); opt-out oculto só para os outros.
+- **Telas:** `DashboardPage`, `RankingPanel` e `RankingPage` usam `useDashboardData` e `useRankingData` (`src/features/dashboard/data.ts`), que leem da API real ou dos mocks no protótipo.
+- **Estados vazios:** usuário novo e nota "—" com menos de 10 respostas.
+- **"Treinar pontos fracos":** abre `/simulados?assunto=…`.
+- **Pendente:**
+  - seed grande e medições (T003/T026);
+  - `area_id` no ledger (T007) e filtro por área;
+  - rate limit (T008) e cache de 60 s (T020);
+  - componente de regras (T023) e testes de fraude dedicados (T024 — finish duplicado, prazo e farm já cobertos em `simulados.db.test.ts`).

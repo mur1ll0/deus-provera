@@ -67,6 +67,18 @@ export async function createReviewJob(input: { source: 'agente_externo'; payload
  * Valida, cria o job se faltar (avisando via `onJob` para não criar outro numa nova tentativa) e grava.
  * Erros: `CommitError` (itens a ajustar) ou `ApiError` (rede/servidor).
  */
+/** Autosave da revisão (T042) — só para jobs já criados. */
+export async function saveReviewDraft(review: ReviewState): Promise<void> {
+  if (!review.jobId) return
+  const { cards, drafts, source, fileName } = review
+  const res = await apiFetch(`/api/imports/${encodeURIComponent(review.jobId)}/draft`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ review: { cards, drafts, source, fileName } }),
+  })
+  if (!res.ok) throw new ApiError(res.status, 'Não foi possível salvar o rascunho.')
+}
+
 export async function commitReview(review: ReviewState, onJob?: (jobId: string) => void): Promise<CommitResult> {
   const { body, refs, problems } = prepareCommit(review)
   if (problems.length) throw new CommitError(`${problems.length} ${problems.length === 1 ? 'item precisa' : 'itens precisam'} de ajuste antes de salvar.`, problems)

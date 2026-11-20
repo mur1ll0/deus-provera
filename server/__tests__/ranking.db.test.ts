@@ -19,12 +19,12 @@ describe('ranking e privacidade (SC-003)', () => {
       { userId: visible, points: 300, reason: 'teste' },
     ])
 
-    const forVisible = await getRanking(visible, null, 1000)
+    const forVisible = (await getRanking(visible, null, 1000)).rows
     expect(forVisible.some((r) => r.userId === hidden)).toBe(false)
     const me = forVisible.find((r) => r.userId === visible)
     expect(me).toMatchObject({ name: 'Apelido Visível', institution: 'UFX', points: 300, me: true })
 
-    const forHidden = await getRanking(hidden, null, 1000)
+    const forHidden = (await getRanking(hidden, null, 1000)).rows
     expect(forHidden.find((r) => r.userId === hidden)).toMatchObject({ points: 500, me: true })
     expect(forHidden.find((r) => r.userId === visible)).toMatchObject({ me: false })
   })

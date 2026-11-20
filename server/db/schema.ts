@@ -246,6 +246,8 @@ export const attempt = pgTable(
     accuracy: real('accuracy'),
     points: integer('points'),
     countsForRanking: boolean('counts_for_ranking').notNull().default(false),
+    /** Pontuação detalhada gravada ao finalizar/corrigir (shared/scoring.ts › SimuladoScore + pendentes). */
+    scoreDetail: jsonb('score_detail').$type<{ base: number; timeBonus: number; total: number; accuracy: number; countsForRanking: boolean; pending: number }>(),
   },
   (t) => [index('attempt_user').on(t.userId, t.startedAt)],
 )
@@ -281,6 +283,8 @@ export const attemptAnswer = pgTable(
     revealedBeforeAnswer: boolean('revealed_before_answer').notNull().default(false),
     usedHint: boolean('used_hint').notNull().default(false),
     answeredAt: ts('answered_at'),
+    /** Treino com revelação imediata: gabarito mostrado — a resposta fica travada. */
+    revealedAt: ts('revealed_at'),
   },
   (t) => [primaryKey({ columns: [t.attemptId, t.itemId] }), index('answer_item').on(t.itemId), index('answer_question').on(t.questionId)],
 )
@@ -302,7 +306,12 @@ export const pointsLedger = pgTable(
     reason: text('reason').notNull(),
     createdAt,
   },
-  (t) => [index('ledger_period').on(t.createdAt, t.userId), index('ledger_user').on(t.userId)],
+  (t) => [
+    index('ledger_period').on(t.createdAt, t.userId),
+    index('ledger_user').on(t.userId),
+    // Um lançamento por motivo e tentativa ("simulado:prova", "ajuste:correcao:<itemId>"): finish/correção idempotentes.
+    uniqueIndex('ledger_attempt_reason').on(t.attemptId, t.reason),
+  ],
 )
 
 /* ============================ IA ============================ */

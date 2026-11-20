@@ -46,6 +46,8 @@ export interface ImportJobView {
   drafts?: Record<string, ServerDraft>
   /** Job de agente externo: o JSON v2 validado (a revisão é montada no cliente). */
   payload?: ImportFile | null
+  /** Revisão salva automaticamente (T042): cards + rascunhos já editados. */
+  reviewDraft?: { cards: unknown[]; drafts: Record<string, unknown>; source: 'pdf_ia' | 'agente_externo' | 'manual'; fileName?: string } | null
 }
 
 export type JobPhase = 'criando' | 'recortando' | 'imagens' | 'processando' | 'revisao'

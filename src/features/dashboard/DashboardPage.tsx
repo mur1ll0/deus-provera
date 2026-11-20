@@ -2,24 +2,21 @@ import clsx from 'clsx'
 import { ArrowRight, Clock, Flame, FileUp, Gauge, Medal, Target, Timer, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router'
 import { RankingPanel } from '@/components/RankingPanel'
-import { Badge, Button, Card, ProgressRing } from '@/components/ui'
+import { Badge, Button, Card, EmptyState, ProgressRing } from '@/components/ui'
+import { FullScreen } from '@/app/RequireAuth'
 import { formatDate, pct } from '@/lib/format'
-import { ACTIVITY_28D, MY_HISTORY, RANKING, TOPIC_PERFORMANCE } from '@/mocks/data'
 import { useAuth } from '@/app/auth-context'
-import { useStore } from '@/mocks/store'
+import { useDashboardData } from './data'
 
 export function DashboardPage() {
-  const { me, questions } = useStore()
   const { user, profile } = useAuth()
-  const myRank = [...RANKING].sort((a, b) => b.points - a.points).findIndex((r) => r.userId === me.id) + 1
-  const mine = RANKING.find((r) => r.userId === me.id)!
-  const myQuestions = questions.filter((q) => q.ownerId === me.id).length
-  const totalAnswered = MY_HISTORY.reduce((a, h) => a + h.questions, 0)
-  const avgAccuracy = MY_HISTORY.reduce((a, h) => a + h.accuracy * h.questions, 0) / totalAnswered
-  const totalMin = MY_HISTORY.reduce((a, h) => a + h.timeMin, 0)
-  const avgSecPerQuestion = Math.round((totalMin * 60) / totalAnswered)
-  const provas = MY_HISTORY.filter((h) => h.mode === 'prova').length
-  const weakest = [...TOPIC_PERFORMANCE].sort((a, b) => a.accuracy - b.accuracy)[0]
+  const { data: d, loading, error } = useDashboardData()
+  if (loading) return <FullScreen>Carregando seu painel…</FullScreen>
+  if (error || !d) return <EmptyState icon={<Gauge />} title="Não foi possível carregar o painel">{error}</EmptyState>
+  const empty = d.simulados === 0
+  const weakest = d.weakest
+  const avgSec = d.avgSecPerQuestion
+  const firstName = (profile?.displayName || user?.name || '').split(' ')[0]
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
@@ -29,10 +26,18 @@ export function DashboardPage() {
           <div className="pointer-events-none absolute -right-16 -top-16 size-64 rounded-full bg-brand-100/60 blur-2xl" />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div className="max-w-xl">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-600">Bom estudo, {(profile?.displayName || user?.name || me.name).split(' ')[0]}</p>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-600">Bom estudo{firstName ? `, ${firstName}` : ''}</p>
               <h1 className="mt-2 text-3xl font-extrabold leading-tight sm:text-4xl">Estude como a prova cobra.</h1>
               <p className="mt-3 text-sm leading-relaxed text-muted">
-                Seu ponto mais fraco agora é <b className="text-ink">{weakest.topic}</b> ({pct(weakest.accuracy)} de acerto). Que tal um treino focado de 10 questões?
+                {weakest ? (
+                  <>
+                    Seu ponto mais fraco agora é <b className="text-ink">{weakest.topic}</b> ({pct(weakest.accuracy)} de acerto). Que tal um treino focado de 10 questões?
+                  </>
+                ) : empty ? (
+                  'Importe suas listas ou cadastre questões e faça o primeiro simulado: suas estatísticas aparecem aqui.'
+                ) : (
+                  'Continue respondendo: com 5 respostas num assunto, mostramos aqui seu ponto mais fraco.'
+                )}
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <Link to="/simulados">
@@ -48,13 +53,16 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="flex items-center gap-4 rounded-2xl bg-white/80 p-4 shadow-sm">
-              <ProgressRing value={mine.grade / 10} label={mine.grade.toFixed(1)} size={96} />
+              <ProgressRing value={(d.grade ?? 0) / 10} label={d.grade != null ? d.grade.toFixed(1) : '—'} size={96} />
               <div>
                 <p className="font-display text-sm font-bold">Nota de desempenho</p>
-                <p className="text-xs text-muted">últimos 30 dias · 0 a 10</p>
-                <Badge tone="green" className="mt-2">
-                  <TrendingUp size={12} /> +0,4 na semana
-                </Badge>
+                <p className="text-xs text-muted">{d.grade != null ? 'últimos 30 dias · 0 a 10' : 'aparece com 10 respostas corrigidas'}</p>
+                {d.gradeDelta != null && d.gradeDelta !== 0 && (
+                  <Badge tone={d.gradeDelta > 0 ? 'green' : 'red'} className="mt-2">
+                    <TrendingUp size={12} /> {d.gradeDelta > 0 ? '+' : ''}
+                    {d.gradeDelta.toFixed(1).replace('.', ',')} na semana
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
@@ -62,12 +70,12 @@ export function DashboardPage() {
 
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
-          <Kpi icon={Medal} label="Pontuação" value={mine.points.toLocaleString('pt-BR')} sub={`${myRank}º no ranking`} accent />
-          <Kpi icon={Target} label="Acerto médio" value={pct(avgAccuracy)} sub={`${totalAnswered} questões`} />
-          <Kpi icon={Gauge} label="Simulados feitos" value={String(mine.simulados)} sub={`${provas} provas nesta quinzena`} />
-          <Kpi icon={Clock} label="Tempo por questão" value={`${Math.floor(avgSecPerQuestion / 60)}m${String(avgSecPerQuestion % 60).padStart(2, '0')}s`} sub="média recente" />
-          <Kpi icon={Flame} label="Sequência" value="6 dias" sub="recorde: 11" />
-          <Kpi icon={FileUp} label="Minhas questões" value={String(myQuestions)} sub="no seu banco" />
+          <Kpi icon={Medal} label="Pontuação" value={d.points.toLocaleString('pt-BR')} sub={d.rank ? `${d.rank}º no ranking` : 'sem pontos ainda'} accent />
+          <Kpi icon={Target} label="Acerto médio" value={d.accuracy != null ? pct(d.accuracy) : '—'} sub={`${d.answered} perguntas`} />
+          <Kpi icon={Gauge} label="Simulados feitos" value={String(d.simulados)} sub={`${d.provas14d} provas nesta quinzena`} />
+          <Kpi icon={Clock} label="Tempo por questão" value={avgSec != null ? `${Math.floor(avgSec / 60)}m${String(avgSec % 60).padStart(2, '0')}s` : '—'} sub="média dos simulados" />
+          <Kpi icon={Flame} label="Sequência" value={`${d.streak.current} ${d.streak.current === 1 ? 'dia' : 'dias'}`} sub={`recorde: ${d.streak.best}`} />
+          <Kpi icon={FileUp} label="Minhas questões" value={String(d.myQuestions)} sub="no seu banco" />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
@@ -77,9 +85,10 @@ export function DashboardPage() {
               <h2 className="text-base font-bold">Mapa de desempenho</h2>
               <span className="text-xs text-muted">% de acerto por assunto</span>
             </div>
+            {d.topics.length === 0 && <p className="text-sm text-muted">Sem respostas corrigidas ainda.</p>}
             <ul className="space-y-3">
-              {TOPIC_PERFORMANCE.map((t) => (
-                <li key={t.topic}>
+              {d.topics.map((t) => (
+                <li key={`${t.discipline}|${t.topic}`}>
                   <div className="mb-1 flex items-center justify-between text-sm">
                     <span className="font-bold">
                       {t.topic} <span className="font-normal text-muted">· {t.discipline}</span>
@@ -95,7 +104,10 @@ export function DashboardPage() {
                 </li>
               ))}
             </ul>
-            <Link to="/simulados" className="mt-5 inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:underline">
+            <Link
+              to={weakest ? `/simulados?assunto=${encodeURIComponent(weakest.topic)}` : '/simulados'}
+              className="mt-5 inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:underline"
+            >
               Treinar pontos fracos <ArrowRight size={14} />
             </Link>
           </Card>
@@ -104,13 +116,13 @@ export function DashboardPage() {
           <Card className="p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-bold">Últimas 4 semanas</h2>
-              <span className="text-xs text-muted">{ACTIVITY_28D.reduce((a, b) => a + b, 0)} questões</span>
+              <span className="text-xs text-muted">{d.activity.reduce((a, b) => a + b.count, 0)} perguntas</span>
             </div>
-            <div className="grid grid-cols-7 gap-1.5">
-              {ACTIVITY_28D.map((n, i) => (
+            <div className="grid grid-cols-7 gap-1.5" role="img" aria-label={`Atividade dos últimos 28 dias: ${d.activity.filter((x) => x.count > 0).length} dias com estudo`}>
+              {d.activity.map(({ day, count: n }, i) => (
                 <div
                   key={i}
-                  title={`${n} questões`}
+                  title={`${day}: ${n} perguntas`}
                   className={clsx(
                     'aspect-square rounded-md',
                     n === 0 ? 'bg-slate-100' : n < 8 ? 'bg-brand-200' : n < 16 ? 'bg-brand-400' : 'bg-brand-600',
@@ -120,7 +132,8 @@ export function DashboardPage() {
             </div>
             <h3 className="mb-3 mt-6 text-sm font-bold">Evolução do acerto (últimos simulados)</h3>
             <div className="flex h-28 items-end gap-2">
-              {[...MY_HISTORY].reverse().map((h) => (
+              {d.history.length === 0 && <p className="text-sm text-muted">Nenhum simulado finalizado ainda.</p>}
+              {[...d.history].reverse().map((h) => (
                 <div key={h.id} className="flex flex-1 flex-col items-center gap-1" title={`${h.title}: ${pct(h.accuracy)}`}>
                   <span className="text-[10px] font-bold text-muted">{pct(h.accuracy)}</span>
                   <div className={clsx('w-full rounded-t-md', h.mode === 'prova' ? 'bg-brand-600' : 'bg-brand-300')} style={{ height: `${h.accuracy * 80}px` }} />
@@ -159,10 +172,10 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {MY_HISTORY.slice(0, 5).map((h) => (
+                {d.history.slice(0, 5).map((h) => (
                   <tr key={h.id} className="border-t border-line">
                     <td className="py-2.5">
-                      <p className="font-bold">{h.title}</p>
+                      <p className="font-bold">{h.href ? <Link to={h.href} className="hover:underline">{h.title}</Link> : h.title}</p>
                       <p className="text-xs text-muted">{formatDate(h.date)}</p>
                     </td>
                     <td>

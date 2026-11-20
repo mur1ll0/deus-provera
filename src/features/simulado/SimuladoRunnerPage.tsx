@@ -1,21 +1,68 @@
 import clsx from 'clsx'
 import { BrainCircuit, Check, ChevronLeft, ChevronRight, Clock, Flag, ImageIcon, Lightbulb, Scissors, Sparkles, Timer, X } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import type { AnswerKind, ItemAnswer, Question, QuestionItem, SimuladoAttempt } from '@shared/domain'
-import { presentAs } from '@shared/simulado'
+import { useAuth } from '@/app/auth-context'
+import { FullScreen } from '@/app/RequireAuth'
 import { Logo } from '@/components/Logo'
 import { Badge, Button, Card, DemoTag, EmptyState, inputClass, Modal } from '@/components/ui'
 import { formatDuration, LETTERS } from '@/lib/format'
 import { aiExplain, aiGradeDiscursive, type AiExplanation } from '@/mocks/ai'
 import { itemLabel } from '@/mocks/model'
 import { useStore } from '@/mocks/store'
-import { autoGrade, computeAttemptScore } from './scoringAdapter'
+import { ApiError } from '@/lib/api'
+import { fetchAttempt, kindsOf, toAttempt, toQuestions } from './remote'
+import { localBackend, remoteBackend, type RunnerBackend, type SaveStatus } from './runnerBackend'
 
 export function SimuladoRunnerPage() {
-  const { id } = useParams()
+  const { id = '' } = useParams()
+  return useAuth().mode === 'real' ? <RemoteRunner id={id} /> : <LocalRunner id={id} />
+}
+
+const notFound = (
+  <div className="p-8">
+    <EmptyState icon={<Timer />} title="Simulado não encontrado">
+      <Link className="font-bold text-brand-600" to="/simulados">
+        Voltar aos simulados
+      </Link>
+    </EmptyState>
+  </div>
+)
+
+/** API real (spec 003): estado no servidor — retoma ao recarregar (T021). */
+function RemoteRunner({ id }: { id: string }) {
+  const { user } = useAuth()
+  const q = useQuery({
+    queryKey: ['simulado', id],
+    // Diferença de relógio medida na chegada da resposta (o cronômetro segue o servidor).
+    queryFn: async () => {
+      const view = await fetchAttempt(id)
+      return { view, offset: Date.parse(view.serverNow) - Date.now() }
+    },
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  })
+  const ready = q.data?.view
+  const offset = q.data?.offset ?? 0
+  const backend = useMemo(
+    () => (ready ? remoteBackend({ attemptId: ready.id, limitMs: ready.timeLimitMs, clockOffsetMs: offset, kinds: kindsOf(ready) }) : null),
+    [ready, offset],
+  )
+  if (q.error instanceof ApiError && q.error.status === 409) return <Navigate to={`/simulados/${id}/resultado`} replace />
+  if (q.error) return q.error instanceof ApiError && q.error.status === 404 ? notFound : <FullScreen>{q.error.message}</FullScreen>
+  if (!ready || !backend || !user) return <FullScreen>Carregando simulado…</FullScreen>
+  return <Runner key={ready.id} attempt={toAttempt(ready, user.id)} questions={toQuestions(ready, user.id)} backend={backend} />
+}
+
+/** Protótipo sem API: store em memória. */
+function LocalRunner({ id }: { id: string }) {
   const store = useStore()
   const attempt = store.attempts.find((a) => a.id === id)
+  const byId = useMemo(() => new Map(store.questions.map((q) => [q.id, q])), [store.questions])
+  const backend = useMemo(() => (attempt ? localBackend(attempt, store, byId) : null), [attempt?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!attempt)
     return (
       <div className="p-8">
@@ -37,23 +84,29 @@ export function SimuladoRunnerPage() {
         </EmptyState>
       </div>
     )
-  return <Runner key={attempt.id} attempt={attempt} />
+  const questions = attempt.questionIds.map((qid) => byId.get(qid)).filter(Boolean) as Question[]
+  return <Runner key={attempt.id} attempt={attempt} questions={questions} backend={backend!} />
 }
 
 const blank = (itemId: string): ItemAnswer => ({ itemId, score: null })
 const isAnswered = (a?: ItemAnswer) => Boolean(a?.choiceId || a?.text?.trim())
 
-function Runner({ attempt }: { attempt: SimuladoAttempt }) {
-  const store = useStore()
+function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; questions: Question[]; backend: RunnerBackend }) {
   const navigate = useNavigate()
-  const byId = useMemo(() => new Map(store.questions.map((q) => [q.id, q])), [store.questions])
-  const qs = useMemo(() => attempt.questionIds.map((id) => byId.get(id)).filter(Boolean) as Question[], [attempt.questionIds, byId])
+  const queryClient = useQueryClient()
+  // Perguntas cujo gabarito chega ao revelar (treino) são trocadas aqui.
+  const [qs, setQs] = useState(questions)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('ok')
+  const [finishError, setFinishError] = useState<string | null>(null)
+  const [finishing, setFinishing] = useState(false)
+  useEffect(() => backend.subscribe(setSaveStatus), [backend])
   const cfg = attempt.config
   const isProva = cfg.mode === 'prova'
   const revealNow = !isProva && cfg.reveal === 'imediato'
 
   const [idx, setIdx] = useState(0)
-  const [now, setNow] = useState(() => Date.now())
+  const clock = useCallback(() => Date.now() + backend.clockOffsetMs, [backend])
+  const [now, setNow] = useState(clock)
   const [confirmExit, setConfirmExit] = useState(false)
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [answers, setAnswers] = useState<Record<string, ItemAnswer>>(() => ({ ...attempt.answers }))
@@ -65,9 +118,24 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
   const finished = useRef(false)
 
   const q = qs[idx]
-  const update = useCallback((itemId: string, patch: Partial<ItemAnswer>) => {
-    setAnswers((all) => ({ ...all, [itemId]: { ...(all[itemId] ?? blank(itemId)), ...patch } }))
-  }, [])
+  /** Muda a resposta na tela; `persist` envia ao backend (escolha, texto, dica). */
+  const update = useCallback(
+    (itemId: string, patch: Partial<ItemAnswer>, persist = true) => {
+      setAnswers((all) => ({ ...all, [itemId]: { ...(all[itemId] ?? blank(itemId)), ...patch } }))
+      if (persist) backend.saveAnswer(itemId, patch)
+    },
+    [backend],
+  )
+
+  const reveal = useCallback(
+    async (item: QuestionItem, checked?: boolean[]) => {
+      const r = await backend.reveal(item, answers[item.id] ?? blank(item.id), checked)
+      setQs((all) => all.map((x) => (x.items.some((it) => it.id === item.id) ? { ...x, items: x.items.map((it) => (it.id === item.id ? r.item : it)) } : x)))
+      update(item.id, r.answer, false)
+      return r.item
+    },
+    [backend, answers, update],
+  )
 
   const go = useCallback(
     (i: number) => {
@@ -76,37 +144,54 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
       const curId = qs[idx].id
       const spent = at - qStart
       setTimeMs((t) => ({ ...t, [curId]: (t[curId] ?? 0) + spent }))
+      backend.saveTime(curId, spent)
       setQStart(at)
       setIdx(i)
     },
-    [qs, idx, qStart],
+    [qs, idx, qStart, backend],
   )
 
-  const finish = useCallback(() => {
+  const finish = useCallback(async () => {
     if (finished.current) return
     finished.current = true
+    setFinishing(true)
+    setFinishError(null)
     const at = Date.now()
     const curId = qs[idx].id
-    const finalTime = { ...timeMs, [curId]: (timeMs[curId] ?? 0) + (at - qStart) }
-    const graded = autoGrade({ ...attempt, answers, timeMs: finalTime, flagged, totalTimeMs: at - startedAt, finishedAt: new Date(at).toISOString() }, byId)
-    const score = computeAttemptScore(graded, byId, store.me.id)
-    store.saveAttempt({ ...graded, points: score.total })
-    navigate(`/simulados/${attempt.id}/resultado`, { replace: true })
-  }, [attempt, answers, timeMs, flagged, qs, idx, qStart, startedAt, byId, navigate, store])
+    const spent = at - qStart
+    const finalTime = { ...timeMs, [curId]: (timeMs[curId] ?? 0) + spent }
+    backend.saveTime(curId, spent)
+    setQStart(at)
+    try {
+      await backend.finish({ answers, timeMs: finalTime, flagged, totalTimeMs: clock() - startedAt })
+      void queryClient.invalidateQueries({ queryKey: ['simulados'] })
+      navigate(`/simulados/${attempt.id}/resultado`, { replace: true })
+    } catch (err) {
+      finished.current = false
+      setFinishing(false)
+      setFinishError((err as Error).message || 'Não foi possível finalizar. Tente de novo.')
+    }
+  }, [attempt.id, answers, timeMs, flagged, qs, idx, qStart, startedAt, navigate, backend, clock, queryClient])
 
+  // Cronômetro: atualiza a tela e, no fim do prazo, finaliza sozinho.
+  const finishRef = useRef(finish)
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 500)
+    finishRef.current = finish
+  }, [finish])
+  useEffect(() => {
+    const t = setInterval(() => {
+      const at = clock()
+      setNow(at)
+      if (backend.limitMs !== null && at - startedAt >= backend.limitMs) void finishRef.current()
+    }, 500)
     return () => clearInterval(t)
-  }, [])
+  }, [clock, backend, startedAt])
 
   const elapsed = now - startedAt
-  const limitMs = cfg.timeLimitMin ? cfg.timeLimitMin * 60_000 : null
+  const limitMs = backend.limitMs
   const remaining = limitMs ? limitMs - elapsed : null
   const qElapsed = (timeMs[q.id] ?? 0) + Math.max(0, now - qStart)
 
-  useEffect(() => {
-    if (remaining !== null && remaining <= 0) finish()
-  }, [remaining, finish])
 
   // Atalhos: ← → navegam; A–E respondem a primeira pergunta de múltipla escolha ainda sem resposta
   useEffect(() => {
@@ -116,13 +201,13 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
       if (e.key === 'ArrowLeft') go(idx - 1)
       const li = LETTERS.indexOf(e.key.toUpperCase())
       if (li < 0) return
-      const target = q.items.find((it) => presentAs(it, cfg.answerFormat) === 'objetiva' && !(revealNow && answers[it.id]?.score != null) && !answers[it.id]?.choiceId)
+      const target = q.items.find((it) => backend.kindOf(it) === 'objetiva' && !(revealNow && answers[it.id]?.score != null) && !answers[it.id]?.choiceId)
       const alts = target?.alternatives ?? []
       if (target && li < alts.length) update(target.id, { choiceId: alts[li].id })
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go, idx, q, cfg.answerFormat, revealNow, answers, update])
+  }, [go, idx, q, backend, revealNow, answers, update])
 
   const totalItems = qs.reduce((a, x) => a + x.items.length, 0)
   const answeredItems = qs.reduce((a, x) => a + x.items.filter((it) => isAnswered(answers[it.id])).length, 0)
@@ -146,6 +231,9 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <span className={clsx('hidden text-xs sm:inline', saveStatus === 'error' ? 'font-bold text-rose-600' : 'text-muted')} aria-live="polite">
+              {saveStatus === 'saving' ? 'Salvando…' : saveStatus === 'error' ? 'Sem conexão — tentando de novo' : ''}
+            </span>
             <span className="hidden items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 font-display text-sm font-bold tabular-nums sm:inline-flex" title="Tempo nesta questão">
               <Clock size={15} /> {formatDuration(qElapsed)}
             </span>
@@ -169,7 +257,7 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
         <main className="min-w-0">
           <Card className="p-5 sm:p-7">
             <div className="mb-4 flex flex-wrap items-center gap-2">
-              <Badge tone="brand">{store.disciplineName(q.disciplineId)}</Badge>
+              <Badge tone="brand">{backend.disciplineName(q)}</Badge>
               {q.topic && <Badge tone="neutral">{q.topic}</Badge>}
               {q.sourceLabel && <Badge tone="neutral">{q.sourceLabel}</Badge>}
               {q.items.length > 1 && <Badge tone="blue">{q.items.length} perguntas</Badge>}
@@ -191,9 +279,11 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
                   index={i}
                   multi={q.items.length > 1}
                   topic={q.topic}
-                  kind={presentAs(it, cfg.answerFormat)}
+                  kind={backend.kindOf(it)}
                   ans={answers[it.id] ?? blank(it.id)}
                   update={(p) => update(it.id, p)}
+                  onReveal={(checked) => reveal(it, checked)}
+                  aiGrade={backend.aiGradeDemo}
                   revealNow={revealNow}
                   aiHints={!isProva && cfg.aiHints}
                 />
@@ -206,7 +296,10 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
               <ChevronLeft size={16} /> Anterior
             </Button>
             <button
-              onClick={() => setFlagged((f) => (f.includes(q.id) ? f.filter((x) => x !== q.id) : [...f, q.id]))}
+              onClick={() => {
+                backend.saveFlag(q.id, !isFlagged)
+                setFlagged((f) => (f.includes(q.id) ? f.filter((x) => x !== q.id) : [...f, q.id]))
+              }}
               className={clsx('inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold', isFlagged ? 'bg-gold-100 text-gold-600' : 'text-muted hover:bg-gold-50')}
             >
               <Flag size={15} /> {isFlagged ? 'Marcada' : 'Marcar p/ revisar'}
@@ -284,7 +377,9 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
             <Button variant="secondary" onClick={() => setConfirmFinish(false)}>
               Continuar respondendo
             </Button>
-            <Button onClick={finish}>Finalizar e ver gabarito</Button>
+            <Button onClick={() => void finish()} disabled={finishing}>
+              {finishing ? 'Finalizando…' : 'Finalizar e ver gabarito'}
+            </Button>
           </>
         }
       >
@@ -292,6 +387,11 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
           Você respondeu <b>{answeredItems}</b> de <b>{totalItems}</b> perguntas ({qs.length} questões) em <b>{formatDuration(elapsed)}</b>.
           {answeredItems < totalItems && ' Perguntas em branco contam como erro.'}
         </p>
+        {finishError && (
+          <p role="alert" className="mt-3 text-sm text-rose-600">
+            {finishError}
+          </p>
+        )}
       </Modal>
       <Modal
         open={confirmExit}
@@ -308,7 +408,7 @@ function Runner({ attempt }: { attempt: SimuladoAttempt }) {
           </>
         }
       >
-        <p className="text-sm">O simulado fica salvo como não finalizado e não pontua.</p>
+        <p className="text-sm">O simulado fica salvo como não finalizado (dá para continuar pelo histórico) e só pontua depois de finalizado.</p>
       </Modal>
     </div>
   )
@@ -324,6 +424,8 @@ function ItemView({
   update,
   revealNow,
   aiHints,
+  onReveal,
+  aiGrade,
 }: {
   item: QuestionItem
   index: number
@@ -334,13 +436,31 @@ function ItemView({
   update: (p: Partial<ItemAnswer>) => void
   revealNow: boolean
   aiHints: boolean
+  /** Revela o gabarito (treino) — devolve a pergunta com o gabarito. */
+  onReveal: (checked?: boolean[]) => Promise<QuestionItem>
+  /** Correção por IA no ato (só no protótipo; na API real chega com a spec 005). */
+  aiGrade: boolean
 }) {
   const [eliminated, setEliminated] = useState<Set<string>>(new Set())
   const [ai, setAi] = useState<AiExplanation | null>(null)
   const [aiLoading, setAiLoading] = useState<'hint' | 'explain' | 'grade' | null>(null)
   const [showExpected, setShowExpected] = useState(false)
   const [checked, setChecked] = useState<boolean[]>([])
+  const [busy, setBusy] = useState(false)
+  const [revealError, setRevealError] = useState<string | null>(null)
   const confirmed = revealNow && ans.score != null
+  async function doReveal(checkedNow?: boolean[]) {
+    setBusy(true)
+    setRevealError(null)
+    try {
+      return await onReveal(checkedNow)
+    } catch (err) {
+      setRevealError((err as Error).message || 'Não foi possível mostrar o gabarito.')
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
   const alts = item.alternatives ?? []
 
   async function askAi(mode: 'hint' | 'explain') {
@@ -421,7 +541,8 @@ function ItemView({
             className={clsx(inputClass, 'min-h-32 text-[15px]')}
             placeholder="Escreva sua resposta completa, como na prova…"
             value={ans.text ?? ''}
-            disabled={confirmed}
+            // Depois de ver a resposta esperada a resposta fica travada (também no servidor).
+            disabled={confirmed || showExpected}
             onChange={(e) => update({ text: e.target.value })}
             aria-label={`Resposta ${itemLabel(item, index)}`}
           />
@@ -429,13 +550,15 @@ function ItemView({
             <Button
               variant="secondary"
               className="mt-3"
-              onClick={() => {
+              disabled={busy}
+              onClick={async () => {
+                const keyed = await doReveal()
+                if (!keyed) return
                 setShowExpected(true)
-                setChecked((item.keyPoints ?? []).map(() => false))
-                if (!ans.text?.trim()) update({ revealedBeforeAnswer: true })
+                setChecked((keyed.keyPoints ?? []).map(() => false))
               }}
             >
-              Ver resposta esperada e corrigir
+              {busy ? 'Abrindo…' : 'Ver resposta esperada e corrigir'}
             </Button>
           )}
           {revealNow && showExpected && (
@@ -465,10 +588,10 @@ function ItemView({
               )}
               {!confirmed ? (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => update({ score: checked.filter(Boolean).length / Math.max(1, checked.length), gradedBy: 'checklist' })}>
-                    Confirmar autocorreção
+                  <Button size="sm" disabled={busy} onClick={() => void doReveal(checked)}>
+                    {busy ? 'Salvando…' : 'Confirmar autocorreção'}
                   </Button>
-                  {aiHints && (
+                  {aiHints && aiGrade && (
                     <Button
                       size="sm"
                       variant="gold"
@@ -498,15 +621,8 @@ function ItemView({
       {kind === 'objetiva' && (revealNow || aiHints) && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {revealNow && !confirmed && (
-            <Button
-              size="sm"
-              disabled={!ans.choiceId}
-              onClick={() => {
-                const correct = alts.find((a) => a.correct)?.id
-                update({ score: ans.choiceId === correct ? 1 : 0, gradedBy: 'auto' })
-              }}
-            >
-              Confirmar resposta
+            <Button size="sm" disabled={!ans.choiceId || busy} onClick={() => void doReveal()}>
+              {busy ? 'Conferindo…' : 'Confirmar resposta'}
             </Button>
           )}
           {aiHints && !confirmed && (
@@ -521,6 +637,11 @@ function ItemView({
           )}
           {ans.usedHint && !confirmed && <span className="text-xs text-gold-600">Dica usada: esta pergunta vale metade dos pontos.</span>}
         </div>
+      )}
+      {revealError && (
+        <p role="alert" className="mt-2 text-sm text-rose-600">
+          {revealError}
+        </p>
       )}
       {ai && !confirmed && (
         <p className="mt-3 flex gap-2 rounded-xl bg-gold-50 p-3 text-sm text-gold-600">

@@ -1,198 +1,172 @@
-# Contrato — API de Simulados
+# Contrato — API de Simulados (modelo v2)
 
 Base: `/api/simulados`. Todas as rotas exigem sessão (cookie do Better Auth) e respondem `401` sem login. Erros seguem o formato `{ "error": string }`.
 
-Tipos referenciados: `SimuladoConfig`, `AnswerRecord` em `shared/domain.ts`.
+Implementação: [`server/routes/simulados.ts`](../../../server/routes/simulados.ts) e [`server/services/simulados.ts`](../../../server/services/simulados.ts). Os tipos e a validação ficam em [`shared/schemas/simulado.ts`](../../../shared/schemas/simulado.ts) (`AttemptView`, `ResultView`, `ItemKey`…). O cliente está em [`src/features/simulado/remote.ts`](../../../src/features/simulado/remote.ts).
+
+**Unidades:**
+- A **questão** (enunciado + perguntas) é a unidade de sorteio, de tempo e de marcação "revisar".
+- A **pergunta** (`itemId`) é a unidade de resposta e de pontuação (`shared/scoring.ts`).
 
 ---
 
-## POST `/api/simulados`
+## POST `/api/simulados/preview` — prévia do sorteio
 
-Cria uma tentativa. O servidor sorteia as questões e define o prazo.
+Recebe o mesmo corpo da criação. Responde `{ "available": n, "topics": string[], "kinds": AnswerKind[][], "answerFormat" }`.
 
-**Corpo** (`SimuladoConfig`)
+| Campo | Conteúdo |
+|---|---|
+| `available` | Questões elegíveis com os filtros e o formato de resposta (até 500) |
+| `topics` | Assuntos disponíveis, ignorando o filtro de assunto |
+| `kinds` | O formato de cada pergunta, por questão, na ordem do sorteio (até 100). O cliente fatia pela quantidade escolhida para estimar o tempo, então mexer no seletor de quantidade não dispara requisição |
+
+## POST `/api/simulados` — criar
+
+**Corpo** (`SimuladoConfig`):
+
 ```json
-{
-  "mode": "prova",
-  "scope": "minhas_e_comunidade",
-  "areaId": "6b1…",
-  "disciplineIds": ["9a2…"],
-  "topics": [],
-  "types": ["objetiva", "discursiva"],
-  "count": 20,
-  "timeLimitMin": null,
-  "reveal": "final",
-  "aiHints": false,
-  "prioritizeMistakes": false
-}
+{ "mode": "prova", "scope": "minhas_e_comunidade", "areaId": null, "disciplineIds": [], "topics": [],
+  "answerFormat": "original", "count": 20, "timeLimitMin": null, "reveal": "final", "aiHints": false, "prioritizeMistakes": false }
 ```
 
 **Regras**
-- `mode = "prova"`: o servidor força `reveal = "final"` e `aiHints = false`. Se `timeLimitMin` vier nulo, aplica o tempo automático (2 min por objetiva + 6 min por discursiva, mínimo 5).
-- `topics` é ignorado na prova.
-- `deadlineAt = startedAt + timeLimitMs + 15 s`.
+- **Prova:** o servidor força `reveal = "final"` e `aiHints = false`, e ignora `topics`. Se `timeLimitMin` vier `null`, aplica o tempo automático pelo sorteio real: 2 min por pergunta objetiva e 6 por discursiva, mínimo 5.
+- **Escopo:**
+  - `minhas` traz só as questões do usuário.
+  - `minhas_e_comunidade` soma as **públicas** de outros usuários, nunca as privadas.
+- **Elegibilidade** pelo formato de resposta: `shared/simulado.ts` › `isEligible`.
+- **`prioritizeMistakes`:** sorteia primeiro as questões com alguma pergunta errada (nota < 0,5) em simulados finalizados.
+- **Prazo:** `deadlineAt = startedAt + timeLimitMs + 15 s` de tolerância de rede.
+- **Gravação:** cria uma linha em `attempt_question` por questão (posição, tempo e marcação).
 
-**Respostas**
-- `201` com `{ "id": "uuid", "questionIds": ["uuid", …], "deadlineAt": "ISO-8601 | null", "config": SimuladoConfig }`, onde `config` é a configuração efetiva, depois dos ajustes do servidor.
-- `400`: configuração inválida.
-- `422`: `{ "error": "Nenhuma questão com esses filtros." }`.
+**Respostas:**
+- `201 { "id", "config", "deadlineAt" }`, onde `config` é a configuração efetiva (com `count` real).
+- `400` se a configuração for inválida.
+- `422 { "error": "Nenhuma questão com esses filtros e formato de resposta." }`.
 
----
+## GET `/api/simulados` — histórico
 
-## GET `/api/simulados`
+`200 { "items": HistoryItem[] }`, com até 30 itens, os mais recentes primeiro. Cada item: `{ id, mode, status: "em_andamento" | "finalizado", questions, accuracy, points, countsForRanking, startedAt, finishedAt, title }`. Os em andamento aparecem na tela com **continuar**.
 
-Histórico do usuário (paginado).
+## GET `/api/simulados/:id` — tentativa em andamento (`AttemptView`)
 
-**Query**: `?cursor=<startedAt ISO>&limit=20`
-
-**200**
 ```json
 {
-  "items": [
-    { "id": "uuid", "mode": "prova", "status": "finalizado", "questions": 20, "accuracy": 0.8, "points": 612, "startedAt": "…", "finishedAt": "…", "countsForRanking": true }
-  ],
-  "nextCursor": "… | null"
+  "id": "uuid", "config": { "...": "efetiva" }, "status": "em_andamento",
+  "startedAt": "…", "deadlineAt": "… | null", "timeLimitMs": 1200000, "serverNow": "…",
+  "questions": [{ "id": "uuid", "area": "Medicina", "discipline": "Ginecologia", "topic": "…", "sourceLabel": "QUESTÃO 8",
+                  "stem": "…", "hasImage": false, "difficulty": "media", "own": true,
+                  "items": [{ "id": "uuid", "label": "a", "prompt": "…", "type": "discursiva", "presentAs": "objetiva",
+                              "alternatives": [{ "id": "uuid", "text": "…" }], "keyPointCount": 3 }] }],
+  "answers": { "<itemId>": { "choiceId": "uuid", "text": null, "score": null, "usedHint": false, "revealedBeforeAnswer": false, "revealed": false } },
+  "keys": { "<itemId>": { "itemId": "…", "alternatives": [{ "id": "…", "correct": true, "explanation": "…" }], "expectedAnswer": "…", "keyPoints": ["…"] } },
+  "timeMs": { "<questionId>": 42000 }, "flagged": ["<questionId>"]
 }
 ```
 
----
+**Sigilo (T008, coberto por teste):**
+- Fora de `keys`, nenhuma resposta contém `correct`, `explanation`, `expectedAnswer` ou `keyPoints`.
+- Na prova, `keys` é sempre vazio e `score` é `null` até o resultado.
+- No treino, `keys` só traz as perguntas já reveladas.
+- `presentAs` vem do servidor, porque o cliente não tem o gabarito para calcular o formato.
 
-## GET `/api/simulados/:id`
+`serverNow` permite ao cliente acompanhar o relógio do servidor no cronômetro.
 
-Tentativa em andamento, pronta para o executor.
+**Erros:**
+- `404` se a tentativa não existir ou for de outro usuário.
+- `409 { "error": "finalizado" }`: o cliente vai para o resultado.
 
-**200**
-```json
-{
-  "id": "uuid",
-  "config": { "...": "SimuladoConfig efetiva" },
-  "status": "em_andamento",
-  "startedAt": "…",
-  "deadlineAt": "… | null",
-  "serverNow": "…",
-  "questions": [
-    {
-      "id": "uuid",
-      "presentAs": "objetiva",
-      "area": "Medicina", "discipline": "Ginecologia", "topic": "Prolapso genital",
-      "case": { "key": "uuid", "context": "Mulher de 80 anos…" },
-      "stem": "a) Qual cirurgia…?",
-      "imageDescription": null,
-      "alternatives": [ { "id": "uuid", "text": "Colpocleise" } ]
-    }
-  ],
-  "answers": { "<questionId>": { "choiceId": "uuid", "text": null, "timeMs": 42000, "flagged": false, "revealed": false } }
-}
-```
+## PUT `/api/simulados/:id/answers/:itemId` — resposta a uma pergunta
 
-**Garantias de sigilo**
-- Na prova em andamento, nenhuma resposta contém `correct`, `explanation`, `expectedAnswer` ou `keyPoints`.
-- No treino com `reveal = "imediato"`, o gabarito de uma questão só aparece em `answers[qid].reveal` depois de `POST /reveal/:qid`.
-- `serverNow` permite ao cliente corrigir a diferença de relógio (`offset = serverNow - Date.now()`).
+**Corpo:** `{ "choiceId"?: uuid | null, "text"?: string | null, "usedHint"?: true }`. A escrita é idempotente e a última vence.
 
-**Erros**
-- `404`: a tentativa não existe ou é de outro usuário.
-- `409`: `{ "error": "finalizado", "resultUrl": "/api/simulados/:id/result" }`.
+**Regras:**
+- `choiceId` precisa ser uma alternativa da pergunta e a pergunta precisa ser objetiva neste simulado; senão `400`.
+- `text` só vale para perguntas discursivas. Passa por `inspectText` (guardrail) antes de ser gravado.
+- `usedHint` não é permitido na prova (`403`).
+- `409` se o tempo acabou (`now > deadlineAt`), se o simulado foi finalizado ou se a pergunta já foi revelada (resposta travada).
 
----
+**200:** `AnswerView`, sem nota.
 
-## PUT `/api/simulados/:id/answers/:questionId`
+## PUT `/api/simulados/:id/questions/:questionId` — tempo e marcação
 
-Salva ou atualiza a resposta. É idempotente e a última escrita vence.
+**Corpo:** `{ "timeMsDelta"?: 0–600000, "flagged"?: boolean }`. `timeMsDelta` é **somado** ao tempo da questão, limitado à duração real da tentativa no servidor.
 
-**Corpo**
-```json
-{ "choiceId": "uuid | null", "text": "string | null", "timeMsDelta": 15000, "flagged": false }
-```
+**200:** `{ "timeMs", "flagged" }`.
 
-**Regras**
-- `timeMsDelta` (0–600000) é **somado** ao `time_ms`. O total por tentativa é limitado à duração real no servidor.
-- Se `now > deadlineAt`: `409 { "error": "prazo_encerrado" }` e nada é gravado.
-- Treino com revelação imediata: depois do `reveal` da questão, `choiceId` e `text` não podem mais mudar (`409 { "error": "resposta_travada" }`), mas `timeMsDelta` e `flagged` são aceitos.
-- `text` passa por `inspectText` (guardrail) antes de ser gravado; o texto original não é usado em prompts sem o delimitador.
-- `choiceId` precisa pertencer à questão (`400`).
+## POST `/api/simulados/:id/reveal/:itemId` — revelar no treino (T022)
 
-**200**: `{ "ok": true, "timeMs": 57000 }`
+Só no **treino com `reveal = "imediato"`**; nos outros casos responde `403`.
 
----
+**Corpo:** `{ "checked"?: boolean[] }`, a autocorreção da discursiva pelos pontos de acerto.
 
-## POST `/api/simulados/:id/reveal/:questionId`
+**Regras:**
+- Grava `revealed_at` e trava a resposta.
+- Sem resposta: `revealedBeforeAnswer = true` e nota 0.
+- **Objetiva:** nota 1 ou 0, `gradedBy = "auto"`.
+- **Discursiva:**
+  - A 1ª chamada devolve a resposta esperada e os pontos de acerto, com nota ainda `null`.
+  - A chamada com `checked` grava `score = marcados / total` com `gradedBy = "checklist"`, que vale 50% no ranking.
 
-Só para **treino** com `reveal = "imediato"`. Trava a resposta e devolve o gabarito da questão.
+**200:** `{ "key": ItemKey, "answer": AnswerView }`.
 
-**Corpo**: `{ "selfGrade": { "checked": [true, false, true] } | null }`. É opcional e serve para discursivas corrigidas por checklist no ato.
+## POST `/api/simulados/:id/finish` — finalizar (T014/T015)
 
-**Regras**
-- Se não havia resposta (sem `choiceId` nem `text`), marca `revealed_before_answer = true` e a questão vale 0 ponto.
-- Objetiva: calcula `score` (0 ou 1, `graded_by = auto`).
-- Discursiva com `selfGrade`: `score = marcados / total`, `graded_by = checklist`.
+1. Corrige as objetivas, zera as perguntas em branco e mantém as discursivas com texto e sem nota **pendentes** (`score = null`).
+2. Calcula o `SimuladoScore`, com o anti-farm de repetição medido nos 7 dias anteriores ao início da tentativa.
+3. Grava tudo num único `db.batch`:
+   - `UPDATE attempt … WHERE finished_at IS NULL` — só a primeira finalização vale;
+   - as notas;
+   - o lançamento `simulado:<modo>` no `points_ledger`, com índice único (tentativa, motivo).
 
-**200**
-```json
-{
-  "correctId": "uuid",
-  "alternatives": [ { "id": "uuid", "correct": true, "explanation": "…" } ],
-  "expectedAnswer": "… | null",
-  "keyPoints": ["…"],
-  "score": 1,
-  "gradedBy": "auto"
-}
-```
+   Repetir a chamada devolve o mesmo resultado, sem lançar de novo.
 
-**403** em modo prova.
+**200:** `{ "id", "base", "timeBonus", "total", "accuracy", "countsForRanking", "pending" }` (`ScoreDetail`, gravado em `attempt.score_detail`).
+
+## GET `/api/simulados/:id/result` — resultado (T016)
+
+Disponível só depois de finalizado; antes disso responde `409`.
+
+**200:** `ResultView`, que é `AttemptView` mais `finishedAt`, `totalTimeMs`, `score` (`ScoreDetail`), as notas de todas as respostas, `keys` com o gabarito de **todas** as perguntas e `byTopic: [{ discipline, topic, items, accuracy }]`.
+
+## POST `/api/simulados/:id/grade/:itemId` — correção posterior (T027)
+
+**Corpo:** `{ "checked": boolean[] }`, a autocorreção pelos pontos de acerto. A correção por IA chega com a spec 005.
+
+**Regras:**
+- Só aceita pergunta com resposta e `score = null`. Uma pergunta já corrigida devolve `409`.
+- Recalcula o `ScoreDetail` e lança a **diferença** no ranking (`ajuste:correcao:<itemId>`, idempotente).
+
+**200:** `{ "answer", "score": ScoreDetail, "delta" }`.
 
 ---
 
-## POST `/api/simulados/:id/finish`
+## Ranking e painel (spec 004)
 
-Finaliza a tentativa: corrige as objetivas, zera as em branco, calcula os pontos e grava no ledger. É idempotente.
+- `GET /api/ranking?periodo=semana|mes|geral` → `{ periodo, rows: RankingRow[], me: RankingRow | null }`.
+  - Cada `RankingRow` traz `{ pos, userId, name, image, institution, points, grade, simulados, me }`.
+  - `grade` é a nota dos últimos 30 dias, com prova pesando 2; é `null` com menos de 10 respostas.
+  - Ordem: pontos, depois simulados no período, depois `userId`.
+  - Quem desligou "Aparecer no ranking" só aparece para si mesmo.
+- `GET /api/stats/me`: o painel do estudante (`DashboardView` em `server/services/stats.ts`), com:
+  - pontos e posição;
+  - nota e variação na semana;
+  - respondidas, acerto, simulados e provas em 14 dias;
+  - tempo médio por questão e sequência de estudo (BRT);
+  - minhas questões;
+  - mapa por Disciplina › Assunto e o assunto mais fraco (≥ 5 respostas);
+  - atividade de 28 dias e os últimos 10 simulados.
 
-**200** (`SimuladoScore` de `shared/scoring.ts`)
-```json
-{ "id": "uuid", "base": 540, "timeBonus": 36, "total": 576, "accuracy": 0.8, "countsForRanking": true, "pendingDiscursive": 2 }
-```
+## Testes
 
-**Regras**
-- `totalTimeMs = min(finishedAt - startedAt, timeLimitMs)`.
-- Discursivas com texto e sem nota ficam `score = null` (pendentes). Elas não pontuam até serem corrigidas.
-- `UPDATE attempt … WHERE finished_at IS NULL` e `INSERT points_ledger` no mesmo `db.batch`.
-
----
-
-## GET `/api/simulados/:id/result`
-
-Resultado completo, disponível só depois de finalizado (`409` antes).
-
-**200**
-```json
-{
-  "id": "uuid",
-  "config": { "...": "..." },
-  "score": { "base": 540, "timeBonus": 36, "total": 576, "accuracy": 0.8, "countsForRanking": true },
-  "totalTimeMs": 1830000,
-  "questions": [
-    {
-      "id": "uuid", "presentAs": "objetiva", "stem": "…", "case": null,
-      "alternatives": [ { "id": "uuid", "text": "…", "correct": true, "explanation": "…" } ],
-      "expectedAnswer": null, "keyPoints": [],
-      "answer": { "choiceId": "uuid", "text": null, "score": 1, "gradedBy": "auto", "timeMs": 42000, "usedHint": false, "revealedBeforeAnswer": false, "flagged": false }
-    }
-  ],
-  "byTopic": [ { "discipline": "Ginecologia", "topic": "Prolapso genital", "n": 6, "accuracy": 0.67 } ]
-}
-```
-
----
-
-## POST `/api/simulados/:id/answers/:questionId/grade`
-
-Corrige uma discursiva **depois** de finalizada.
-
-**Corpo**: `{ "method": "checklist", "checked": [true, false, true] }` ou `{ "method": "ia" }`
-
-**Regras**
-- Só aceita discursivas com `score = null`. Uma questão já corrigida devolve `409`.
-- `ia`: passa por `reserveAiRequest` e chama `gradeDiscursive` (spec 005). Se a IA estiver indisponível, devolve `503` e o cliente sugere o checklist.
-- Recalcula `scoreSimulado` e grava em `points_ledger` um lançamento `ajuste:correcao` com a **diferença** em relação ao total anterior.
-
-**200**: `{ "score": 0.75, "gradedBy": "ia", "feedback": "…", "matched": [true, true, false, true], "points": { "total": 598, "delta": 22 } }`
+`server/__tests__/simulados.db.test.ts` (`npm run test:db`) cobre, contra o Postgres:
+- prévia e escopo (T031);
+- sigilo do gabarito (T008);
+- respostas e alternativa inválida;
+- revelação e trava no treino;
+- autocorreção;
+- finalização idempotente com um lançamento só;
+- resultado;
+- correção posterior com ajuste no ranking;
+- prazo, 404 e 422;
+- painel e ranking a partir de simulados reais.

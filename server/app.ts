@@ -12,6 +12,7 @@ import { accountRoutes, profileRoutes } from './routes/profile'
 import { questionsRoutes } from './routes/questions'
 import { rankingRoutes } from './routes/ranking'
 import { simuladosRoutes } from './routes/simulados'
+import { statsRoutes } from './routes/stats'
 import { taxonomyRoutes } from './routes/taxonomy'
 import { getProfile } from './services/profile'
 
@@ -47,6 +48,7 @@ app.route('/taxonomy', taxonomyRoutes)
 app.route('/imports', importsRoutes)
 app.route('/simulados', simuladosRoutes)
 app.route('/ranking', rankingRoutes)
+app.route('/stats', statsRoutes)
 app.route('/ai', aiRoutes)
 
 app.onError((err, c) => {

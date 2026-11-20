@@ -61,7 +61,7 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [x] T039 Editor de questão compartilhado (`src/features/questions/QuestionEditor.tsx`)
 - [x] T040 Itens inválidos bloqueiam a confirmação, com lista de problemas (Editar questão/card) e a opção explícita "Tirar N questões com problema da importação" (`src/features/import/ReviewBoard.tsx`)
 - [ ] T041 Anúncios `aria-live` ao mover questões e instruções de teclado do dnd-kit em pt-BR (`src/features/import/ReviewBoard.tsx`)
-- [ ] T042 Persistir o rascunho da revisão no `import_job` (autosave) para não perder edições ao recarregar (`PATCH /api/imports/:id/draft`, `server/routes/imports.ts`) — parcial: o resultado da IA já pode ser reaberto pela lista de importações não salvas (T035); as edições feitas na revisão ainda não
+- [x] T042 Persistir o rascunho da revisão no `import_job` (autosave) para não perder edições ao recarregar (`PATCH /api/imports/:id/draft`, `server/routes/imports.ts`) — `PATCH /api/imports/:id/draft` 2 s após cada edição; reabrir pela lista de importações não salvas (T035) restaura as edições; o JSON do agente cria o job já na revisão
 
 ## Fase 6 — US4 Distratores com IA (P2)
 

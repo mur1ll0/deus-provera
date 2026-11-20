@@ -61,6 +61,12 @@ describe('rotas de importação: agente externo → commit', () => {
       visibility: 'privada' as const,
     }
 
+    // Autosave da revisão (T042): guarda e devolve no GET enquanto em revisão
+    const draft = { cards: [{ id: 'c1', area: 'Medicina', discipline: 'Ginecologia', topic: 'Editado', description: '', questionIds: ['q'] }], drafts: { q: { id: 'q', stem: 'editado' } }, source: 'agente_externo' }
+    expect((await app.request(`/api/imports/${id}/draft`, json('PATCH', { review: draft }))).status).toBe(200)
+    const reopened = (await (await app.request(`/api/imports/${id}`, json('GET'))).json()) as { reviewDraft: typeof draft }
+    expect(reopened.reviewDraft).toEqual(draft)
+
     // 400 com a lista de problemas por card/questão — nada é gravado
     const bad = toCommitInput([card], { q: { ...good, items: [{ ...good.items[0], alternatives: [{ ...good.items[0].alternatives[0] }] }] } }).body
     const r400 = await app.request(`/api/imports/${id}/commit`, json('POST', bad))
@@ -83,6 +89,7 @@ describe('rotas de importação: agente externo → commit', () => {
     expect(jobs.jobs.find((j) => j.id === id)).toMatchObject({ status: 'concluida', fileName: 'lista-teste.pdf' })
     const [row] = await db().select().from(schema.importJob).where(eq(schema.importJob.id, id))
     expect(Object.keys(row.state)).toEqual(['commitResult'])
+    expect((await app.request(`/api/imports/${id}/draft`, json('PATCH', { review: draft }))).status).toBe(409)
   })
 
   it('lote manual: cria job "manual" e salva pelo mesmo commit; sem sessão → 401', async () => {
