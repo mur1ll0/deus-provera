@@ -1,6 +1,6 @@
 import type { QuestionItem, Visibility } from '@shared/domain'
 import { inspectText } from '@shared/guardrails'
-import type { ImportFile, ImportQuestion } from '@shared/schemas/import'
+import { cleanItemLabel, type ImportFile, type ImportQuestion } from '@shared/schemas/import'
 import { heuristicKeyPoints, type SegmentedQuestion } from '@shared/segmenter'
 import { classifyQuestion } from '@/mocks/ai'
 import { emptyItem, uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
@@ -82,7 +82,7 @@ function draftFromImportQuestion(q: ImportQuestion, visibility: Visibility, orig
     stem: guard(q.enunciado, flags) ?? q.enunciado,
     items: q.perguntas.map((p) => ({
       id: uid('it'),
-      label: p.rotulo ?? undefined,
+      label: cleanItemLabel(p.rotulo) ?? undefined,
       prompt: guard(p.texto, flags) ?? p.texto,
       type: p.tipo,
       expectedAnswer: guard(p.resposta_esperada, flags),

@@ -51,6 +51,12 @@ export const importAlternativeSchema = z.object({
   gerada_por_ia: z.boolean().optional(),
 })
 
+/** Rótulo de pergunta sem a pontuação que a tela já põe ("b)" → "b", "(c)" → "c", "2." → "2"); vazio vira null. */
+export function cleanItemLabel(label: string | null | undefined): string | null {
+  const s = (label ?? '').trim().replace(/^\(/, '').replace(/[).:\-–—\s]+$/u, '').trim()
+  return s || null
+}
+
 export const importItemSchema = z
   .object({
     /** "a", "b", "1"… — omita/nulo na pergunta única. */

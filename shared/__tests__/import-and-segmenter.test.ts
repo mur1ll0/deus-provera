@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseImportText } from '../schemas/import'
+import { cleanItemLabel, parseImportText } from '../schemas/import'
 import { reflow, segmentQuestions, splitPromptAnswer } from '../segmenter'
 
 const valid = {
@@ -125,5 +125,11 @@ Histeroscopia diagnóstica.`
 
   it('reflow junta quebras de linha no meio da frase e preserva enumerações', () => {
     expect(reflow('paciente com\nprolapso. Conduta:\na) colporrafia')).toBe('paciente com prolapso. Conduta:\na) colporrafia')
+  })
+})
+
+describe('cleanItemLabel', () => {
+  it('tira a pontuação que a tela já põe ("b))" na revisão)', () => {
+    expect(['b)', '(c)', '2.', ' a ', 'b2)', 'QUESTÃO 1', '', null, ')'].map(cleanItemLabel)).toEqual(['b', 'c', '2', 'a', 'b2', 'QUESTÃO 1', null, null, null])
   })
 })

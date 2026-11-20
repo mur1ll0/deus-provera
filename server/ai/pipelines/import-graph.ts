@@ -1,6 +1,6 @@
 import { inspectText, wrapUntrusted, type RiskLevel } from '../../../shared/guardrails'
 import { fullTextWithImages, imageDescriptionsIn, missingImageBrackets, type ImageKind } from '../../../shared/page-images'
-import { importQuestionSchema, type ImportQuestion } from '../../../shared/schemas/import'
+import { cleanItemLabel, importQuestionSchema, type ImportQuestion } from '../../../shared/schemas/import'
 import { heuristicKeyPoints, segmentQuestions, type SegmentedQuestion } from '../../../shared/segmenter'
 import { AiUnavailableError, callStructured, type AttemptLog } from '../client'
 import { END, StateGraph, type GraphState } from '../graph'
@@ -387,7 +387,7 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
           disciplina: 'Sem disciplina',
           rotulo: q.rotulo ?? b.seg.sourceLabel ?? null,
           enunciado: lost.length ? `${q.enunciado}\n${lost.join('\n')}`.slice(0, 12000) : q.enunciado,
-          perguntas: q.perguntas,
+          perguntas: q.perguntas.map((p) => ({ ...p, rotulo: cleanItemLabel(p.rotulo) })),
           dificuldade: q.dificuldade,
           tem_imagem: q.tem_imagem || !!img.tem_imagem,
           descricao_imagem: img.descricao_imagem,
