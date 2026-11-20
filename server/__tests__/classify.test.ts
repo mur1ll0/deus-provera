@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanLabel, mergeClassification, planClassifyBatches, UNCLASSIFIED_TOPIC, type DraftItem } from '../ai/pipelines/import-graph'
+import { cleanLabel, mergeClassification, nextClassifyQueue, planClassifyBatches, UNCLASSIFIED_TOPIC, type DraftItem } from '../ai/pipelines/import-graph'
 
 const draft = (id: string): DraftItem => ({
   id,
@@ -60,6 +60,23 @@ describe('classificação em lotes (spec 002 › T033)', () => {
     let r = mergeClassification([], d, ['b0', 'b1'], [grupo('A', ['b0', 'b1'])])
     r = mergeClassification(r.cards, r.drafts, ['b2', 'b3'], [], 'Classificação automática indisponível — organize manualmente.')
     expect(r.cards.at(-1)).toMatchObject({ assunto: UNCLASSIFIED_TOPIC, questionIds: ['b2', 'b3'], descricao: expect.stringMatching(/indisponível/) })
+  })
+
+  it('2ª chance: as que sobraram em "Revisar categoria" voltam à fila uma vez, e saem do card se classificadas', () => {
+    const d = drafts(4)
+    let r = mergeClassification([], d, ['b0', 'b1', 'b2', 'b3'], [grupo('A', ['b0'])])
+    expect(nextClassifyQueue([['x']], r.cards)).toEqual({ pendingClassify: [['x']], classifyRetried: false })
+    const q = nextClassifyQueue([], r.cards)
+    expect(q).toEqual({ pendingClassify: [['b1', 'b2', 'b3']], classifyRetried: true })
+    r = mergeClassification(r.cards, r.drafts, q.pendingClassify[0], [grupo('A', ['b1']), grupo('B', ['b2'])])
+    expect(r.cards.map((c) => [c.assunto, c.questionIds])).toEqual([
+      ['A', ['b0', 'b1']],
+      ['B', ['b2']],
+      [UNCLASSIFIED_TOPIC, ['b3']],
+    ])
+    expect(nextClassifyQueue([], r.cards, true)).toEqual({ pendingClassify: [], classifyRetried: true })
+    r = mergeClassification(r.cards, r.drafts, ['b3'], [grupo('B', ['b3'])])
+    expect(r.cards.some((c) => c.assunto === UNCLASSIFIED_TOPIC)).toBe(false)
   })
 
   it('rótulo com lixo de outro alfabeto é limpo', () => {

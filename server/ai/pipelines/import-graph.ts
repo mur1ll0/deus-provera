@@ -20,7 +20,7 @@ import { describeImageBatch, VISION_BATCH, VISION_MAX_ATTEMPTS, type PageImageIn
  *                             │       │
  *                             ├───────┘
  *                             ▼
- *                         classify ◄─┐ (loop por lote de 20 questões)
+ *                         classify ◄─┐ (loop por lote de 20 questões + 1 nova rodada p/ as que sobrarem)
  *                             ├──────┘
  *                             ▼
  *                         (plan) ──► distractors ◄─┐ (opcional, loop por lote de PERGUNTAS)
@@ -110,6 +110,8 @@ export interface ImportState extends GraphState {
   pendingBatches: string[][]
   /** Lotes de questões a classificar (ids de drafts). Ausente até o nó classify rodar pela 1ª vez. */
   pendingClassify?: string[][]
+  /** As questões que sobraram em "Revisar categoria" já ganharam a 2ª chance? */
+  classifyRetried?: boolean
   /** Lotes de perguntas para distratores: "questionId#índiceDaPergunta". */
   pendingDistractors: string[][]
   drafts: Record<string, DraftItem>
@@ -235,7 +237,10 @@ export function mergeClassification(
   const inBatch = new Set(batchIds)
   const placed = new Set<string>()
   const nextDrafts = { ...drafts }
-  const nextCards = cards.map((c) => ({ ...c, questionIds: [...c.questionIds] }))
+  // Na 2ª chance as questões já estão em "Revisar categoria": saem de lá e só voltam se ficarem sem grupo de novo.
+  const nextCards = cards
+    .map((c) => ({ ...c, questionIds: isUnclassified(c) ? c.questionIds.filter((id) => !inBatch.has(id)) : [...c.questionIds] }))
+    .filter((c) => c.questionIds.length || !isUnclassified(c))
   const find = (k: Pick<Card, 'area' | 'disciplina' | 'assunto'>) => nextCards.find((c) => cardKey(c) === cardKey(k))
   for (const g of grupos) {
     const label = { area: cleanLabel(g.area), disciplina: cleanLabel(g.disciplina), assunto: cleanLabel(g.assunto) }
@@ -264,6 +269,16 @@ export function mergeClassification(
   }
   nextCards.sort((a, b) => Number(isUnclassified(a)) - Number(isUnclassified(b)))
   return { cards: nextCards, drafts: nextDrafts }
+}
+
+/**
+ * Próxima fila de classificação. Quando os lotes acabam, as questões que ficaram em "Revisar categoria"
+ * (lote que falhou por timeout/instabilidade ou ids omitidos) ganham UMA nova rodada, em lotes menores.
+ */
+export function nextClassifyQueue(rest: string[][], cards: Card[], retried = false): { pendingClassify: string[][]; classifyRetried: boolean } {
+  if (rest.length || retried) return { pendingClassify: rest, classifyRetried: retried }
+  const left = cards.find(isUnclassified)?.questionIds ?? []
+  return { pendingClassify: chunkBy(left, () => 1, CLASSIFY_BATCH / 2, CLASSIFY_BATCH / 2), classifyRetried: true }
 }
 
 export const importGraph = new StateGraph<ImportState, ImportCtx>()
@@ -398,7 +413,7 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
     // Jobs que chegam aqui pela 1ª vez (ou de antes dos lotes) ainda não têm a fila.
     const [batchIds = [], ...rest] = s.pendingClassify ?? planClassifyBatches(s.drafts)
     const batch = batchIds.map((id) => s.drafts[id]).filter(Boolean)
-    if (!batch.length) return { pendingClassify: rest }
+    if (!batch.length) return nextClassifyQueue(rest, s.cards, s.classifyRetried)
     try {
       await ctx.reserveAiRequest()
       const r = await callStructured({
@@ -409,10 +424,12 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
         system: CLASSIFY_SYSTEM(s.nonce, ctx.taxonomy, s.cards.filter((c) => c.assunto !== UNCLASSIFIED_TOPIC).map((c) => `${c.area} › ${c.disciplina} › ${c.assunto}`)),
         prompt: wrapUntrusted(batch.map((d) => `id: ${d.id}\n${d.enunciado.slice(0, 400)}\n${d.perguntas.map((p) => p.texto).join(' | ').slice(0, 200)}`).join('\n---\n'), s.nonce),
       })
-      return { ...mergeClassification(s.cards, s.drafts, batchIds, r.value.grupos), pendingClassify: rest }
+      const merged = mergeClassification(s.cards, s.drafts, batchIds, r.value.grupos)
+      return { ...merged, ...nextClassifyQueue(rest, merged.cards, s.classifyRetried) }
     } catch (err) {
       if (!(err instanceof AiUnavailableError)) throw err
-      return { ...mergeClassification(s.cards, s.drafts, batchIds, [], 'Classificação automática indisponível — organize manualmente.'), pendingClassify: rest }
+      const merged = mergeClassification(s.cards, s.drafts, batchIds, [], 'Classificação automática indisponível — organize manualmente.')
+      return { ...merged, ...nextClassifyQueue(rest, merged.cards, s.classifyRetried) }
     }
   })
   .addConditionalEdges('classify', (s) => (s.pendingClassify?.length ? 'classify' : s.options.generateDistractors ? 'plan-distractors' : 'validate'))

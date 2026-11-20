@@ -55,8 +55,18 @@ for (const pdf of ['Unidade II.pdf', 'III UNIDADE.pdf']) {
       await drop.click()
       await page.getByRole('button', { name: /Confirmar e salvar/ }).click()
     }
-    const cardFix = page.getByRole('button', { name: 'Editar card' })
-    if (await cardFix.count()) test.info().annotations.push({ type: 'aviso', description: 'Card "Revisar categoria" precisou de classificação manual' })
+    // O que a IA não classificou fica em "Revisar categoria": o usuário escolhe área e disciplina do card (como faria na tela)
+    const problems = page.getByRole('alert', { name: 'Ajuste estes itens antes de salvar' })
+    if (await problems.isVisible()) {
+      const left = await page.getByRole('heading', { name: 'Revisar categoria' }).count()
+      test.info().annotations.push({ type: 'aviso', description: `${pdf}: card "Revisar categoria" classificado à mão (${left} card)` })
+      await problems.getByRole('button', { name: 'Editar card' }).first().click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByLabel('Área').fill('Medicina')
+      await dialog.getByLabel('Disciplina').fill('Ginecologia')
+      await dialog.getByRole('button', { name: 'Salvar card' }).click()
+      await page.getByRole('button', { name: /Confirmar e salvar/ }).click()
+    }
     await expect(page.getByRole('heading', { name: /quest(ão|ões) salvas?!/ })).toBeVisible({ timeout: 120_000 })
     const saved = Number((await page.getByRole('heading', { name: /salvas?!/ }).textContent())!.match(/\d+/)![0])
     test.info().annotations.push({ type: 'resultado', description: `${pdf}: ${saved} salvas de ${total} na revisão` })
