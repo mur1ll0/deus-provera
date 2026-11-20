@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url'
 import { getRequestListener } from '@hono/node-server'
 import tailwindcss from '@tailwindcss/vite'
@@ -29,9 +30,13 @@ function honoDevApi(): Plugin {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const withApi = mode === 'api'
-  if (withApi) {
+  // `npm run test:db` (modo "db"): testes de integração contra o Postgres real (*.db.test.ts).
+  const dbTests = mode === 'db'
+  if (withApi || dbTests) {
     // Variáveis do servidor (.env/.env.local, sem prefixo VITE_) só no processo Node — nunca no bundle.
     for (const [k, v] of Object.entries(loadEnv('development', process.cwd(), ''))) process.env[k] ??= v
+    // Preferir um branch descartável do Neon para os testes, se configurado.
+    if (dbTests && process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL
   }
   return {
     plugins: [react(), tailwindcss(), ...(withApi ? [honoDevApi()] : [])],
@@ -41,6 +46,10 @@ export default defineConfig(({ mode }) => {
         '@shared': fileURLToPath(new URL('./shared', import.meta.url)),
       },
     },
+    test: dbTests
+      ? { include: ['**/*.db.test.ts'], exclude: ['node_modules/**'], fileParallelism: false, testTimeout: 30_000 }
+      : // `npm test`/`npm run check` nunca tocam o banco.
+        { exclude: ['node_modules/**', 'dist/**', '**/*.db.test.ts'] },
     server: withApi
       ? // Porta fixa: é a do BETTER_AUTH_URL e do callback OAuth registrado no Google.
         { port: 3000, strictPort: true }

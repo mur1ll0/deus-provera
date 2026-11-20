@@ -8,6 +8,7 @@ import { db, schema } from './db/client'
 import { sessionMiddleware, type AppEnv } from './middleware'
 import { aiRoutes } from './routes/ai'
 import { importsRoutes } from './routes/imports'
+import { accountRoutes, profileRoutes } from './routes/profile'
 import { questionsRoutes } from './routes/questions'
 import { rankingRoutes } from './routes/ranking'
 import { simuladosRoutes } from './routes/simulados'
@@ -39,6 +40,8 @@ app.get('/me', async (c) => {
   const user = c.get('user')
   return c.json({ user, profile: user ? await getProfile(user.id, user.name) : null })
 })
+app.route('/profile', profileRoutes)
+app.route('/account', accountRoutes)
 app.route('/questions', questionsRoutes)
 app.route('/taxonomy', taxonomyRoutes)
 app.route('/imports', importsRoutes)

@@ -12,7 +12,6 @@ import { isEligible, norm, uid, type DraftQuestion, type ImportCard } from './mo
 const STORAGE_KEY = 'deus-provera:mock:v2'
 
 interface PersistedState {
-  loggedIn: boolean
   areas: Area[]
   disciplines: Discipline[]
   groups: QuestionGroup[]
@@ -21,7 +20,6 @@ interface PersistedState {
 }
 
 const initialState = (): PersistedState => ({
-  loggedIn: false,
   areas: AREAS,
   disciplines: DISCIPLINES,
   groups: GROUPS,
@@ -50,8 +48,6 @@ function shuffle<T>(arr: T[]): T[] {
 
 export interface StoreApi extends PersistedState {
   me: typeof ME
-  login: () => void
-  logout: () => void
   resetDemo: () => void
   commitImport: (cards: ImportCard[], drafts: Record<Id, DraftQuestion>) => number
   updateQuestion: (q: Question) => void
@@ -76,9 +72,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [state])
 
-  const login = useCallback(() => setState((s) => ({ ...s, loggedIn: true })), [])
-  const logout = useCallback(() => setState((s) => ({ ...s, loggedIn: false })), [])
-  const resetDemo = useCallback(() => setState({ ...initialState(), loggedIn: true }), [])
+  // Login/logout saíram do store (T036): a sessão é do AuthProvider (Better Auth).
+  const resetDemo = useCallback(() => setState(initialState()), [])
 
   const commitImport = useCallback((cards: ImportCard[], drafts: Record<Id, DraftQuestion>) => {
     let saved = 0
@@ -179,8 +174,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       ...state,
       me: ME,
-      login,
-      logout,
       resetDemo,
       commitImport,
       updateQuestion,
@@ -191,7 +184,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       areaName,
       disciplineName,
     }),
-    [state, login, logout, resetDemo, commitImport, updateQuestion, deleteQuestion, poolFor, startSimulado, saveAttempt, areaName, disciplineName],
+    [state, resetDemo, commitImport, updateQuestion, deleteQuestion, poolFor, startSimulado, saveAttempt, areaName, disciplineName],
   )
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>

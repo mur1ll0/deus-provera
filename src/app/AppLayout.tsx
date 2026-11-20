@@ -1,8 +1,9 @@
 import clsx from 'clsx'
 import { FileUp, LayoutDashboard, Library, LogOut, RotateCcw, Timer, Trophy } from 'lucide-react'
-import { NavLink, Outlet, useNavigate } from 'react-router'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 import { Logo } from '@/components/Logo'
 import { Avatar } from '@/components/ui'
+import { OnboardingNotice } from '@/features/profile/OnboardingNotice'
 import { useStore } from '@/mocks/store'
 import { initials, useAuth } from './auth-context'
 
@@ -56,11 +57,13 @@ export function AppLayout() {
             <RotateCcw size={14} /> Restaurar dados de demonstração{mode === 'real' && ' (simulados)'}
           </button>
           <div className="flex items-center gap-3 rounded-2xl border border-line bg-white p-3">
-            <Avatar seed={initials(name)} src={user?.image} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold">{name}</p>
-              <p className="truncate text-[11px] text-muted">{subtitle}</p>
-            </div>
+            <Link to="/perfil" className="flex min-w-0 flex-1 items-center gap-3 rounded-xl hover:text-brand-700" title="Seu perfil">
+              <Avatar seed={initials(name)} src={user?.image} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">{name}</p>
+                <p className="truncate text-[11px] text-muted">{subtitle}</p>
+              </div>
+            </Link>
             <button onClick={() => void logout()} className="rounded-lg p-1.5 text-muted hover:bg-brand-50 hover:text-brand-700" aria-label="Sair" title="Sair">
               <LogOut size={16} />
             </button>
@@ -71,12 +74,18 @@ export function AppLayout() {
       {/* Topbar (mobile) */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-white/85 px-4 py-3 backdrop-blur lg:hidden">
         <Logo />
-        <button onClick={() => void logout()} className="rounded-lg p-2 text-muted" aria-label="Sair" title="Sair">
-          <LogOut size={18} />
-        </button>
+        <div className="flex items-center gap-1">
+          <Link to="/perfil" className="rounded-full p-1" aria-label="Seu perfil" title="Seu perfil">
+            <Avatar seed={initials(name)} src={user?.image} size="sm" />
+          </Link>
+          <button onClick={() => void logout()} className="rounded-lg p-2 text-muted" aria-label="Sair" title="Sair">
+            <LogOut size={18} />
+          </button>
+        </div>
       </header>
 
       <main className="min-w-0 px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10 lg:pt-8">
+        <OnboardingNotice />
         <Outlet />
       </main>
 

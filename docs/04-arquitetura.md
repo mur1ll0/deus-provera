@@ -51,7 +51,7 @@ deus-provera/
 │  ├─ app.ts                         # Hono: middlewares + rotas (/api/*)
 │  ├─ env.ts · auth.ts · middleware.ts
 │  ├─ db/{schema.ts, client.ts, migrations/}
-│  ├─ routes/{imports,simulados,ranking,ai}.ts
+│  ├─ routes/{questions,taxonomy,profile,imports,simulados,ranking,ai}.ts
 │  ├─ services/taxonomy.ts
 │  └─ ai/
 │     ├─ models.ts                   # cadeias de modelos gratuitos por tarefa
@@ -66,7 +66,7 @@ deus-provera/
 │  └─ prompts/external-agent.ts      # prompt para o agente do usuário
 ├─ src/                              # frontend (React)
 │  ├─ app/ (router, layout)  components/ (ui, ranking)  lib/
-│  ├─ features/{auth,dashboard,import,questions,simulado,ranking}/
+│  ├─ features/{auth,dashboard,import,questions,simulado,ranking,profile}/
 │  └─ mocks/ (dados e "IA" do protótipo — substituídos pela API na Fase 1)
 ├─ vercel.json · drizzle.config.ts · vite.config.ts · tsconfig*.json · .env.example
 ```
@@ -128,7 +128,8 @@ sequenceDiagram
 |---|---|---|---|
 | GET/POST | `/api/auth/*` | Better Auth (login Google, callback, sessão, logout) | 001 |
 | GET | `/api/me` | Usuário da sessão + perfil | 001 |
-| PATCH / DELETE | `/api/me` | Atualizar perfil / excluir conta | 001 |
+| GET / PATCH | `/api/profile` | Ler / atualizar perfil e privacidade ([contrato](../specs/001-autenticacao/contracts/api-profile.md)) | 001 |
+| DELETE | `/api/account` | Excluir conta (`{ confirm: "EXCLUIR" }`) | 001 |
 | POST | `/api/imports` | Cria job (PDF texto ou JSON do agente) | 002 |
 | POST | `/api/imports/:id/run` | Avança o pipeline até ~240 s | 002 |
 | GET | `/api/imports/:id` | Status, cards e rascunhos | 002 |
@@ -149,7 +150,7 @@ Contratos detalhados em `specs/*/contracts/`.
 
 ## 5. Frontend
 
-- **Roteamento:** `/login`, `/` (painel), `/simulados`, `/simulados/:id` (modo foco, sem sidebar), `/simulados/:id/resultado`, `/questoes`, `/importar`, `/ranking`.
+- **Roteamento:** `/login`, `/` (painel), `/simulados`, `/simulados/:id` (modo foco, sem sidebar), `/simulados/:id/resultado`, `/questoes`, `/importar`, `/ranking`, `/perfil`.
 - **Layout:** sidebar à esquerda (desktop) / barra inferior (mobile); **ranking no painel direito** do dashboard (≥ 1280 px) e abaixo do conteúdo em telas menores.
 - **Estado:** no protótipo, `src/mocks/store.tsx` (Context + localStorage). Na Fase 1, cada ação vira chamada à API via um cliente tipado (`hc<AppType>` do Hono) e cache com TanStack Query (a adicionar).
 - **Design system:** tokens no `@theme` (vinho `brand-*`, dourado `gold-*`, `canvas`, `ink`, `muted`, `line`), componentes em `src/components/ui.tsx`.

@@ -32,7 +32,8 @@ npm run dev          # protótipo (Vite, http://localhost:5173) — funciona sem
 npm run dev:api      # SPA + API Hono na mesma origem (http://localhost:3000) — login Google e Neon reais; exige .env
 npm run dev:full     # alternativa com vercel dev (projeto vinculado na Vercel)
 npm run check        # typecheck (front+server) + oxlint + vitest
-npm test             # vitest
+npm test             # vitest (sem banco)
+npm run test:db      # *.db.test.ts contra o Postgres (.env ou TEST_DATABASE_URL) — cria/apaga dados test-db-*
 npm run build        # tsc -b && vite build
 npm run db:generate  # gera migração a partir de server/db/schema.ts
 npm run db:migrate   # aplica migrações (usa DATABASE_URL_UNPOOLED)
@@ -67,5 +68,5 @@ Node 24 · Vite 8 · React 19.3 · React Router 8 · Tailwind 4.3 · TypeScript 
 ## Estado atual
 
 Fase 0 concluída (planejamento + protótipo) + revisão de 2026-11-20 (modelo enunciado + perguntas, contrato v2, gabarito de referência e avaliação do importador: ~90% recall / ~95% precisão sem IA). Avaliação **com IA** pendente de `OPENROUTER_API_KEY`. Próximo: Fase 1 / S1 — ver `docs/08-roadmap.md`; considerar o pool multi-provedor e "Conectar OpenRouter" (docs/11).
-S1 (2026-11-20) em andamento: auth real no SPA (AuthProvider/RequireAuth), `/api/questions` + `/api/taxonomy`, Banco de questões lendo da API, migração `0000_init` e seed **aplicados no Neon**; login Google real e CRUD de questões pela tela validados localmente contra o Neon. Falta produção (callback OAuth de `deus-provera.vercel.app` + env na Vercel). Simulados, dashboard, ranking e importação ainda usam o store mock.
+S1 (2026-11-20) em andamento: auth real no SPA (AuthProvider/RequireAuth), `/api/questions` + `/api/taxonomy`, Banco de questões lendo da API, migração `0000_init` e seed **aplicados no Neon**; login Google real e CRUD de questões pela tela validados localmente contra o Neon. Falta produção (callback OAuth de `deus-provera.vercel.app` + env na Vercel). Perfil (`/perfil`, `/api/profile`), exclusão de conta (`DELETE /api/account`), aviso único do ranking e ranking com `display_name` prontos (spec 001 US3/US4). Simulados, dashboard, ranking (tela) e importação ainda usam o store mock.
 Stubs conhecidos: `POST /api/imports/:id/commit` (501), prioritizeMistakes e "repetida em 7 dias" nos simulados, verificação de modo treino em `/api/ai/explain`.

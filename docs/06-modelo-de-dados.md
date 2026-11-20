@@ -162,6 +162,6 @@ WHERE t.user_id = $1 AND t.finished_at >= now() - interval '30 days' AND a.score
 
 ## 6. Retenção e LGPD
 
-- Exclusão de conta: `ON DELETE CASCADE` remove sessões, perfil, tentativas, pontos, jobs e questões; questões **públicas** já usadas por outros são transferidas para um usuário técnico "Comunidade" (anonimização) em vez de apagadas — a definir na spec 001.
+- Exclusão de conta (spec 001 › US4, `server/services/account-deletion.ts`): num único `db.batch`, as questões do usuário que **outros** já responderam são anonimizadas (conteúdo apagado, `deleted_at`, dono e card transferidos ao usuário técnico `comunidade`) e depois `DELETE FROM user` remove em cascata sessões, contas, perfil, questões, cards, importações, tentativas e pontos (`ai_call.user_id` → NULL). Coberto por `server/__tests__/account-deletion.db.test.ts` (SC-004).
 - `import_job.state` é limpo 7 dias após `concluida` (rotina diária via Vercel Cron, Fase 2).
 - `ai_call` agregado e truncado após 90 dias.

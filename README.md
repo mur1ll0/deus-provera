@@ -55,7 +55,8 @@ Vite 8 · React 19 · React Router 8 · Tailwind 4 · Hono (Vercel Functions, No
 | `npm run dev` | Protótipo (Vite, porta 5173) — sem API: login simulado |
 | `npm run dev:api` | SPA + API Hono na mesma origem (http://localhost:3000) — login Google real e banco Neon (requer `.env`) |
 | `npm run dev:full` | Alternativa com `vercel dev` (requer projeto vinculado na Vercel) |
-| `npm run check` | Tipos + lint + testes |
+| `npm run check` | Tipos + lint + testes (sem banco) |
+| `npm run test:db` | Testes de integração contra o Postgres do `.env` (ou `TEST_DATABASE_URL`, de preferência um branch do Neon): login Google simulado, ranking e exclusão de conta |
 | `npm run build` | Build de produção |
 | `npm run db:generate` / `db:migrate` | Migrações Drizzle (lê `.env.local`/`.env`; usa `DATABASE_URL_UNPOOLED`) |
 | `npm run db:seed` | Áreas e disciplinas comuns (idempotente) |

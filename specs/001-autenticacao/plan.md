@@ -35,24 +35,28 @@ A identidade usa **Better Auth** com provedor Google e adaptador Drizzle (`provi
 server/
   auth.ts                      existe   — betterAuth({ google, drizzleAdapter, session 30d, cookieCache })
   middleware.ts                existe   — sessionMiddleware, requireUser, AppUser
-  app.ts                       existe   — monta /api/auth/*, /api/me
+  app.ts                       feito    — monta /api/auth/*, /api/me, /api/profile, /api/account
   env.ts                       existe   — valida segredos de auth
   db/schema.ts                 existe   — user, session, account, verification, profile
-  routes/profile.ts            criar    — GET/PATCH /api/profile, DELETE /api/account
-  services/account-deletion.ts criar    — exclusão em cascata + soft-delete de questões públicas
+  routes/profile.ts            feito    — GET/PATCH /api/profile, DELETE /api/account (contracts/api-profile.md)
+  services/profile.ts          feito    — ensureProfile, getProfile, updateProfile
+  services/account-deletion.ts feito    — anonimiza questões usadas por outros (Comunidade) + DELETE FROM user, num db.batch
+  services/ranking.ts          feito    — ranking com display_name; opt-out oculto para os outros
+  __tests__/*.db.test.ts       feito    — T021, SC-003, SC-004 contra o Postgres (`npm run test:db`)
 shared/
-  schemas/profile.ts           criar    — zod: displayName 2–40, institution/course ≤ 80
-  __tests__/profile.test.ts    criar
+  schemas/profile.ts           feito    — zod: displayName 2–40, institution/course ≤ 80, onboarded, confirmação EXCLUIR
+  __tests__/profile.test.ts    feito
 src/
   lib/api.ts                   feito    — cliente Hono RPC (credentials 'same-origin', ApiError, 401 global único)
   lib/auth-client.ts           feito    — createAuthClient() de better-auth/react
   app/auth-context.ts          feito    — AuthContext, useAuth(), safeRedirect()
   app/AuthProvider.tsx         feito    — /api/me via TanStack Query, signIn/signOut, fallback protótipo em DEV
   app/RequireAuth.tsx          feito    — guard de rota (/login?redirect=…)
-  app/AppLayout.tsx            existe   — trocar useStore().loggedIn por useAuth()
-  features/auth/LoginPage.tsx  existe   — trocar login() simulado por authClient.signIn.social({ provider: 'google' })
-  features/profile/ProfilePage.tsx criar — perfil, privacidade, zona de perigo
-server/db/migrations/          criar    — gerado por `npm run db:generate`
+  app/AppLayout.tsx            feito    — useAuth(), link para /perfil, aviso único
+  features/auth/LoginPage.tsx  feito    — authClient.signIn.social({ provider: 'google' })
+  features/profile/ProfilePage.tsx feito — perfil, privacidade, zona de perigo (/perfil)
+  features/profile/OnboardingNotice.tsx feito — aviso único do ranking (T020)
+server/db/migrations/          feito    — 0000_init aplicado no Neon
 ```
 
 ## Modelo de dados
@@ -127,4 +131,5 @@ Atualizado em 2026-11-20 (Sprint S1):
 - **SPA**: `AuthProvider` + `RequireAuth` substituem o `loggedIn` do store; login com `authClient.signIn.social({ provider: 'google' })`, mensagem "Login cancelado" para `access_denied`, logout real na sidebar/topbar, foto do Google no avatar. O store mock continua para as telas de simulado/dashboard/ranking/importação.
 - **Dev**: `npm run dev:api` (porta 3000, callback `http://localhost:3000/api/auth/callback/google`). Sem API (`npm run dev`), só em desenvolvimento, o login simulado do protótipo é usado como fallback.
 - **Testes**: `server/__tests__/auth-guard.test.ts` (SC-002: toda rota registrada fora de `/auth`, `/health`, `/me` responde 401 sem cookie; `/me` nunca 401).
-- **Falta**: perfil/privacidade (US3), exclusão de conta (US4), aviso único do ranking (T020), teste de integração do callback (T021), fila de respostas do simulado (T024, depende da 003) e remover o login do store mock (T036).
+- **Perfil e conta (2026-11-20)**: `/api/profile` (GET/PATCH) e `DELETE /api/account` ([contrato](contracts/api-profile.md)); página `/perfil` com zona de perigo; aviso único no layout; ranking com `display_name` e opt-out oculto só para os outros; login fora do store mock (T036). Testes de integração contra o Postgres em `npm run test:db` (T021, SC-003, SC-004).
+- **Falta**: fila de respostas do simulado (T024, depende da 003), acessibilidade/LGPD de polimento (T034/T035), produção na Vercel (T005) e os pontos em aberto da spec (preview, termos de uso, nome abreviado no ranking).

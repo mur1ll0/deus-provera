@@ -1,5 +1,7 @@
 import { hc } from 'hono/client'
+import type { AccountRoutes, ProfileRoutes } from '../../server/routes/profile'
 import type { QuestionsRoutes } from '../../server/routes/questions'
+import type { RankingRoutes } from '../../server/routes/ranking'
 import type { TaxonomyRoutes } from '../../server/routes/taxonomy'
 
 /**
@@ -56,4 +58,7 @@ export async function unwrap<R extends { ok: boolean; status: number; json(): Pr
 export const api = {
   questions: hc<QuestionsRoutes>('/api/questions', { fetch: apiFetch }),
   taxonomy: hc<TaxonomyRoutes>('/api/taxonomy', { fetch: apiFetch }),
+  profile: hc<ProfileRoutes>('/api/profile', { fetch: apiFetch }),
+  account: hc<AccountRoutes>('/api/account', { fetch: apiFetch }),
+  ranking: hc<RankingRoutes>('/api/ranking', { fetch: apiFetch }),
 }

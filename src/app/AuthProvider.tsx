@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react'
-import { setUnauthorizedHandler } from '@/lib/api'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import type { ACCOUNT_DELETE_CONFIRM, ProfilePatch } from '@shared/schemas/profile'
+import { api, setUnauthorizedHandler, unwrap } from '@/lib/api'
 import { authClient } from '@/lib/auth-client'
-// Fallback de DESENVOLVIMENTO (sem API): login simulado do protótipo. Remover com T036.
+// Fallback de DESENVOLVIMENTO (sem API): identidade fictícia do protótipo (exceção em CLAUDE.md).
 import { ME } from '@/mocks/data'
-import { useStore } from '@/mocks/store'
 import { AuthContext, type AuthMode, type AuthProfile, type AuthState, type AuthUser } from './auth-context'
 
 interface MeResult {
@@ -15,6 +15,8 @@ interface MeResult {
 
 const ME_KEY = ['me'] as const
 const SIGNED_OUT: MeResult = { mode: 'real', user: null, profile: null }
+const PROTO_USER: AuthUser = { id: ME.id, name: ME.name, email: ME.email, image: null }
+const PROTO_PROFILE: AuthProfile = { displayName: ME.name, institution: ME.institution, course: null, showInRanking: true, onboardedAt: null }
 
 /** GET /api/me (nunca 401). Em dev sem API (resposta não-JSON ou falha de rede) → modo protótipo. */
 async function fetchMe(): Promise<MeResult> {
@@ -37,7 +39,8 @@ async function fetchMe(): Promise<MeResult> {
 /** Sessão do usuário (spec 001): GET /api/me na inicialização; 401 global; login/logout reais. */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
-  const store = useStore()
+  // Modo protótipo (dev sem API): sessão só em memória — recarregar a página pede "login" de novo (T036).
+  const [protoProfile, setProtoProfile] = useState<AuthProfile | null>(null)
   const me = useQuery({ queryKey: ME_KEY, queryFn: fetchMe, staleTime: Infinity, retry: 1 })
   const mode = me.data?.mode ?? 'real'
   const realUser = me.data?.user ?? null
@@ -58,42 +61,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (redirectTo: string) => {
-      if (mode === 'prototipo') return store.login()
+      if (mode === 'prototipo') return setProtoProfile(PROTO_PROFILE)
       const errorCallbackURL = `/login?redirect=${encodeURIComponent(redirectTo)}`
       const { error } = await authClient.signIn.social({ provider: 'google', callbackURL: redirectTo, errorCallbackURL })
       if (error) throw new Error(error.message ?? 'Não foi possível iniciar o login.')
     },
-    [mode, store],
+    [mode],
   )
 
   const signOut = useCallback(async () => {
-    if (mode === 'prototipo') return store.logout()
+    if (mode === 'prototipo') return setProtoProfile(null)
     await authClient.signOut().catch(() => undefined)
     resetSession()
-  }, [mode, store, resetSession])
+  }, [mode, resetSession])
+
+  const updateProfile = useCallback(
+    async (patch: ProfilePatch): Promise<AuthProfile> => {
+      if (mode === 'prototipo') {
+        const next = { ...(protoProfile ?? PROTO_PROFILE), ...patch, onboardedAt: patch.onboarded ? new Date().toISOString() : (protoProfile?.onboardedAt ?? null) }
+        delete (next as { onboarded?: unknown }).onboarded
+        setProtoProfile(next)
+        return next
+      }
+      const profile = await unwrap(api.profile.index.$patch({ json: patch }))
+      queryClient.setQueryData<MeResult>(ME_KEY, (prev) => (prev ? { ...prev, profile } : prev))
+      return profile
+    },
+    [mode, protoProfile, queryClient],
+  )
+
+  const deleteAccount = useCallback(
+    async (confirm: string) => {
+      if (mode === 'prototipo') return setProtoProfile(null)
+      await unwrap(api.account.index.$delete({ json: { confirm: confirm as typeof ACCOUNT_DELETE_CONFIRM } }))
+      resetSession()
+    },
+    [mode, resetSession],
+  )
 
   const refresh = useCallback(async () => {
     await me.refetch()
   }, [me])
 
   const value = useMemo<AuthState>(() => {
-    const proto = mode === 'prototipo' && store.loggedIn
+    const proto = mode === 'prototipo'
     return {
       status: me.isPending ? 'loading' : me.isError ? 'error' : 'ready',
       mode,
-      user: mode === 'prototipo' ? (proto ? { id: ME.id, name: ME.name, email: ME.email, image: null } : null) : realUser,
-      profile:
-        mode === 'prototipo'
-          ? proto
-            ? { displayName: ME.name, institution: ME.institution, course: null, showInRanking: true, onboardedAt: null }
-            : null
-          : (me.data?.profile ?? null),
+      user: proto ? (protoProfile ? PROTO_USER : null) : realUser,
+      profile: proto ? protoProfile : (me.data?.profile ?? null),
       error: me.error?.message ?? null,
       signIn,
       signOut,
       refresh,
+      updateProfile,
+      deleteAccount,
     }
-  }, [me.isPending, me.isError, me.error, me.data, mode, realUser, store.loggedIn, signIn, signOut, refresh])
+  }, [me.isPending, me.isError, me.error, me.data, mode, realUser, protoProfile, signIn, signOut, refresh, updateProfile, deleteAccount])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

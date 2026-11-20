@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { ImportPage } from '@/features/import/ImportPage'
+import { ProfilePage } from '@/features/profile/ProfilePage'
 import { QuestionBankPage } from '@/features/questions/QuestionBankPage'
 import { RankingPage } from '@/features/ranking/RankingPage'
 import { SimuladoResultPage } from '@/features/simulado/SimuladoResultPage'
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
       { path: 'questoes', element: <QuestionBankPage /> },
       { path: 'importar', element: <ImportPage /> },
       { path: 'ranking', element: <RankingPage /> },
+      { path: 'perfil', element: <ProfilePage /> },
       { path: '*', element: <NotFound /> },
     ],
   },

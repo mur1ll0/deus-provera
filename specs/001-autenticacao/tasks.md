@@ -31,8 +31,8 @@ Legenda: `[P]` = paralelizável (arquivos independentes) · `[x]` = concluída
 - [x] T017 Guard de rota `RequireAuth` preservando a rota de origem; remover o check de `loggedIn` do store (`src/app/RequireAuth.tsx`, `src/app/AppLayout.tsx`, `src/app/router.tsx`, `src/features/simulado/SimuladoRunnerPage.tsx`)
 - [x] T018 Hook `databaseHooks.user.create.after` para criar `profile` com `display_name` do Google (`server/auth.ts`)
 - [x] T019 Mensagem "Login cancelado" quando o Google retorna `error=access_denied` (`src/features/auth/LoginPage.tsx`)
-- [ ] T020 [P] Aviso único sobre o ranking no primeiro acesso, que grava `onboarded_at` (`src/features/dashboard/DashboardPage.tsx`, `server/routes/profile.ts`)
-- [ ] T021 Teste de integração: callback com Google mockado cria `user`, `account`, `session`, `profile` (`server/__tests__/auth.test.ts`)
+- [x] T020 [P] Aviso único sobre o ranking no primeiro acesso, que grava `onboarded_at` (e `privacy_ack_at`) — no layout, para aparecer em qualquer rota de chegada (`src/features/profile/OnboardingNotice.tsx`, `src/app/AppLayout.tsx`, `server/routes/profile.ts`)
+- [x] T021 Teste de integração: callback com Google mockado cria `user`, `account`, `session`, `profile` (`server/__tests__/auth-callback.db.test.ts`, `npm run test:db`; também cobre PATCH /api/profile e DELETE /api/account)
 
 ## Fase 4 — US2 Sessão persistente e logout (P1)
 
@@ -43,30 +43,30 @@ Legenda: `[P]` = paralelizável (arquivos independentes) · `[x]` = concluída
 
 ## Fase 5 — US3 Perfil e privacidade (P2)
 
-- [ ] T026 [P] Schema zod do perfil (`shared/schemas/profile.ts`) + testes (`shared/__tests__/profile.test.ts`)
-- [ ] T027 `GET/PATCH /api/profile` com `normalizeText` nos campos de texto (`server/routes/profile.ts`, montar em `server/app.ts`)
-- [ ] T028 Página de perfil: nome de exibição, instituição, curso, alternância "Aparecer no ranking" (`src/features/profile/ProfilePage.tsx`, rota `/perfil`)
-- [ ] T029 Respeitar `show_in_ranking` no ranking (já há `having bool_and(show_in_ranking)` em `server/routes/ranking.ts`; cobrir com teste SC-003)
+- [x] T026 [P] Schema zod do perfil (`shared/schemas/profile.ts`) + testes (`shared/__tests__/profile.test.ts`)
+- [x] T027 `GET/PATCH /api/profile` com `normalizeText` nos campos de texto (`server/routes/profile.ts`, montar em `server/app.ts`) — contrato em [contracts/api-profile.md](contracts/api-profile.md)
+- [x] T028 Página de perfil: nome de exibição, instituição, curso, alternância "Aparecer no ranking" (`src/features/profile/ProfilePage.tsx`, rota `/perfil`)
+- [x] T029 Respeitar `show_in_ranking` no ranking — oculto para os outros, visível para si; nome = `display_name` (`server/services/ranking.ts`, teste SC-003 em `server/__tests__/ranking.db.test.ts`)
 
 ## Fase 6 — US4 Excluir conta (P3)
 
-- [ ] T030 Serviço de exclusão: soft-delete de questões públicas + `DELETE FROM user` em `db.batch` (`server/services/account-deletion.ts`)
-- [ ] T031 `DELETE /api/account` exigindo `{ confirm: "EXCLUIR" }` (`server/routes/profile.ts`)
-- [ ] T032 "Zona de perigo" com confirmação digitada (`src/features/profile/ProfilePage.tsx`)
-- [ ] T033 Teste de integração SC-004: nenhuma linha restante com o `user_id` (`server/__tests__/account-deletion.test.ts`)
+- [x] T030 Serviço de exclusão: questões usadas por outros anonimizadas (Comunidade + soft-delete) + `DELETE FROM user` em `db.batch` (`server/services/account-deletion.ts`)
+- [x] T031 `DELETE /api/account` exigindo `{ confirm: "EXCLUIR" }` (`server/routes/profile.ts`)
+- [x] T032 "Zona de perigo" com confirmação digitada (`src/features/profile/ProfilePage.tsx`)
+- [x] T033 Teste de integração SC-004: nenhuma linha restante com o `user_id` (`server/__tests__/account-deletion.db.test.ts`)
 
 ## Fase 7 — Polimento
 
 - [ ] T034 [P] Acessibilidade da tela de login e perfil: foco visível, `aria-live` para erros, contraste AA
 - [ ] T035 [P] Revisão LGPD: texto do aviso de privacidade e link na tela de login
-- [ ] T036 Remover `login`/`logout`/`loggedIn` do store do protótipo (`src/mocks/store.tsx`) quando o cliente real estiver ativo
+- [x] T036 Remover `login`/`logout`/`loggedIn` do store do protótipo (`src/mocks/store.tsx`) — o modo protótipo (dev sem API) guarda a sessão fictícia só em memória no `AuthProvider`
 
 ## Definição de pronto
 
 > Verificado em 2026-11-20 (local, `npm run dev:api`): migração `0000_init` + seed aplicados no Neon; login Google real cria `user`, `account` (google), `session` e `profile`; pela tela, criar → editar → excluir questão persiste no Neon (conferido após recarregar); logout encerra a sessão (`/api/me` → `user: null`, `/api/questions` → 401, rota protegida → `/login?redirect=…`); desktop e 375 px sem rolagem horizontal. Corrigido no caminho: logout deixava a tela "logada" (`queryClient.clear()` removia a query `['me']` observada) e mensagem própria para `state_mismatch` (tela do Google aberta > 5 min). Pendentes: produção (T004/T005 — o cliente OAuth ainda não tem o callback de `deus-provera.vercel.app`) e os testes T021/T026/T033.
 
 - [ ] Login Google funcionando em produção e em `localhost:3000` (local ✅ 2026-11-20; produção pendente)
-- [ ] `npm run check` verde (typecheck + lint + vitest), incluindo os testes T021, T025, T026, T033
+- [x] `npm run check` verde (typecheck + lint + vitest), incluindo os testes T021, T025, T026, T033 (T021/T033 e SC-003 em `npm run test:db`, contra o Postgres)
 - [ ] SC-001 a SC-005 verificados e registrados no PR
 - [x] Nenhum dado de sessão no `localStorage`/`sessionStorage` (sessão só no cookie httpOnly; `localStorage` guarda apenas os dados do protótipo)
 - [x] `docs/` atualizado se algum contrato mudou

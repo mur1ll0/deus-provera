@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { ProfilePatch } from '@shared/schemas/profile'
 
 export interface AuthUser {
   id: string
@@ -32,6 +33,10 @@ export interface AuthState {
   signIn: (redirectTo: string) => Promise<void>
   signOut: () => Promise<void>
   refresh: () => Promise<void>
+  /** PATCH /api/profile e atualiza o perfil em memória (sidebar, painel). */
+  updateProfile: (patch: ProfilePatch) => Promise<AuthProfile>
+  /** DELETE /api/account (`confirm` = "EXCLUIR") e encerra a sessão local. */
+  deleteAccount: (confirm: string) => Promise<void>
 }
 
 export const AuthContext = createContext<AuthState | null>(null)
