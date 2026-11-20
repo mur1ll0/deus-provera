@@ -167,6 +167,8 @@ export interface PreviewView {
   available: number
   /** Assuntos disponíveis (ignorando o filtro de assunto). */
   topics: string[]
+  /** Áreas e disciplinas com alguma questão na fonte escolhida (ignorando os filtros de área/disciplina/assunto). */
+  withQuestions: { areaIds: string[]; disciplineIds: string[] }
   /** Formato de cada pergunta, por questão, na ordem do sorteio (até 100) — o cliente fatia pela quantidade. */
   kinds: AnswerKind[][]
   answerFormat: AnswerFormat

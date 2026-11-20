@@ -80,6 +80,20 @@ describe('simulados (spec 003)', () => {
     expect(onlyMc.available).toBe(10) // discursiva sem alternativas não entra em "múltipla"
   })
 
+  it('prévia: só as áreas/disciplinas com questões na fonte, ignorando os filtros de área/disciplina', async () => {
+    const [d] = await db()
+      .select({ id: schema.discipline.id })
+      .from(schema.discipline)
+      .where(and(eq(schema.discipline.areaId, areaId), eq(schema.discipline.name, 'Disciplina Simulado Teste')))
+    const mine = await previewSimulado(me, base({ disciplineIds: [crypto.randomUUID()] }))
+    expect(mine.available).toBe(0)
+    expect(mine.withQuestions).toEqual({ areaIds: [areaId], disciplineIds: [d.id] })
+    // Usuário sem questões: nada em "minhas"; em "comunidade", as disciplinas das questões públicas
+    const empty = await createTestUser('sim-vazio')
+    expect((await previewSimulado(empty, base())).withQuestions).toEqual({ areaIds: [], disciplineIds: [] })
+    expect((await previewSimulado(empty, base({ scope: 'minhas_e_comunidade' }))).withQuestions.disciplineIds).toContain(d.id)
+  })
+
   it('prova: sem gabarito em andamento, finalização idempotente com 1 lançamento no ranking', async () => {
     const { id, config } = await createSimulado(me, base({ answerFormat: 'multipla', reveal: 'imediato', aiHints: true }))
     expect(config).toMatchObject({ reveal: 'final', aiHints: false, count: 10 })

@@ -5,7 +5,7 @@ import type { AnswerKind, SimuladoConfig } from '@shared/domain'
 import { presentAs } from '@shared/simulado'
 import { api, unwrap } from '@/lib/api'
 import { formatDate, pct } from '@/lib/format'
-import { MY_HISTORY } from '@/mocks/data'
+import { ME, MY_HISTORY } from '@/mocks/data'
 import { useStore } from '@/mocks/store'
 import { createRemote, listRemote, previewRemote } from './remote'
 
@@ -54,6 +54,15 @@ export function useSetupSource(cfg: SimuladoConfig, real: boolean) {
     () => (real ? [] : [...new Set(store.poolFor({ ...cfg, topics: [] }).map((q) => q.topic).filter(Boolean) as string[])].sort()),
     [real, store, cfg],
   )
+  const localWithQuestions = useMemo(() => {
+    if (real) return null
+    const qs = store.questions.filter((q) => q.ownerId === ME.id || (cfg.scope === 'minhas_e_comunidade' && q.visibility === 'publica'))
+    return { areaIds: new Set(qs.map((q) => q.areaId)), disciplineIds: new Set(qs.map((q) => q.disciplineId)) }
+  }, [real, store.questions, cfg.scope])
+  const remoteWithQuestions = useMemo(
+    () => (preview.data ? { areaIds: new Set(preview.data.withQuestions.areaIds), disciplineIds: new Set(preview.data.withQuestions.disciplineIds) } : null),
+    [preview.data],
+  )
 
   if (!real) {
     const rows: HistoryRow[] = [
@@ -69,6 +78,7 @@ export function useSetupSource(cfg: SimuladoConfig, real: boolean) {
       areas: store.areas,
       disciplines: store.disciplines,
       topics: localTopics,
+      withQuestions: localWithQuestions,
       available: localPool.length,
       kinds: (count: number): AnswerKind[] => localPool.slice(0, count).flatMap((q) => q.items.map((it) => presentAs(it, cfg.answerFormat))),
       start: (c: SimuladoConfig) => {
@@ -95,6 +105,8 @@ export function useSetupSource(cfg: SimuladoConfig, real: boolean) {
     areas: taxonomy.data?.areas ?? [],
     disciplines: taxonomy.data?.disciplines ?? [],
     topics: preview.data?.topics ?? [],
+    /** Áreas/disciplinas com questões na fonte escolhida; `null` enquanto a prévia carrega. */
+    withQuestions: remoteWithQuestions,
     available: preview.data?.available ?? 0,
     kinds: (count: number): AnswerKind[] => (preview.data?.kinds ?? []).slice(0, count).flat(),
     start: (c: SimuladoConfig) => create.mutate(c),

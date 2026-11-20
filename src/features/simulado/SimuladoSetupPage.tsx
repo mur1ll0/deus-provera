@@ -34,7 +34,13 @@ export function SimuladoSetupPage() {
 
   const isProva = cfg.mode === 'prova'
   const src = useSetupSource(cfg, real)
-  const areaOptions = useMemo(() => sortByName(src.areas.map((a) => ({ key: a.id, name: a.name, ids: [a.id] }))), [src.areas])
+  // Só entram áreas/disciplinas com questões na fonte escolhida (o cadastro é global e tem muitas vazias);
+  // o que já estiver selecionado continua visível para poder ser desmarcado.
+  const has = src.withQuestions
+  const areaOptions = useMemo(
+    () => sortByName(src.areas.filter((a) => has?.areaIds.has(a.id) || a.id === cfg.areaId).map((a) => ({ key: a.id, name: a.name, ids: [a.id] }))),
+    [src.areas, has, cfg.areaId],
+  )
   const selectedArea = areaOptions.find((a) => a.key === cfg.areaId)
   // A mesma disciplina pode existir em várias áreas (uma linha por área no banco): com a área
   // selecionada só entram as dela; em "Todas", disciplinas de mesmo nome viram um chip só, que
@@ -43,13 +49,14 @@ export function SimuladoSetupPage() {
     const byName = new Map<string, Option>()
     for (const d of src.disciplines) {
       if (cfg.areaId && d.areaId !== cfg.areaId) continue
+      if (!has?.disciplineIds.has(d.id) && !cfg.disciplineIds.includes(d.id)) continue
       const k = foldText(d.name)
       const cur = byName.get(k)
       if (cur) cur.ids.push(d.id)
       else byName.set(k, { key: k, name: d.name, ids: [d.id] })
     }
     return sortByName([...byName.values()])
-  }, [src.disciplines, cfg.areaId])
+  }, [src.disciplines, cfg.areaId, cfg.disciplineIds, has])
   const selectedDisciplines = disciplineOptions.filter((o) => o.ids.every((id) => cfg.disciplineIds.includes(id))).length
   const topics = src.topics
   const topicOptions = useMemo(() => topics.map((t) => ({ key: t, name: t, ids: [t] })), [topics])
@@ -143,7 +150,7 @@ export function SimuladoSetupPage() {
                   return { ...c, topics: [], disciplineIds: on ? rest : [...rest, ...o.ids] }
                 })
               }
-              empty={cfg.areaId ? 'Nenhuma disciplina nesta área.' : 'Nenhuma disciplina cadastrada.'}
+              empty={!has ? 'Carregando…' : cfg.areaId ? 'Nenhuma disciplina com questões nesta área.' : 'Nenhuma questão nesta fonte ainda — importe ou cadastre questões.'}
             />
           </Section>
 

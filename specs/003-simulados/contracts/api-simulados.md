@@ -12,12 +12,13 @@ Implementação: [`server/routes/simulados.ts`](../../../server/routes/simulados
 
 ## POST `/api/simulados/preview` — prévia do sorteio
 
-Recebe o mesmo corpo da criação. Responde `{ "available": n, "topics": string[], "kinds": AnswerKind[][], "answerFormat" }`.
+Recebe o mesmo corpo da criação. Responde `{ "available": n, "topics": string[], "withQuestions": { "areaIds": string[], "disciplineIds": string[] }, "kinds": AnswerKind[][], "answerFormat" }`.
 
 | Campo | Conteúdo |
 |---|---|
 | `available` | Questões elegíveis com os filtros e o formato de resposta (até 500) |
 | `topics` | Assuntos disponíveis, ignorando o filtro de assunto |
+| `withQuestions` | Áreas e disciplinas com alguma questão na fonte (`scope`), ignorando os filtros de área, disciplina e assunto. A tela só oferece essas |
 | `kinds` | O formato de cada pergunta, por questão, na ordem do sorteio (até 100). O cliente fatia pela quantidade escolhida para estimar o tempo, então mexer no seletor de quantidade não dispara requisição |
 
 ## POST `/api/simulados` — criar

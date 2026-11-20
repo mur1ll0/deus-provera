@@ -62,13 +62,22 @@ async function drawPool(userId: string, cfg: Config, limit: number) {
 }
 
 export async function previewSimulado(userId: string, cfg: Config): Promise<PreviewView> {
-  const [pool, topicRows] = await Promise.all([
+  const [pool, topicRows, taxonomyRows] = await Promise.all([
     drawPool(userId, cfg, 500),
     db().selectDistinct({ topic: question.topic }).from(question).where(and(poolFilters(userId, cfg, false), isNotNull(question.topic))),
+    // A tela só oferece áreas/disciplinas que têm questões nesta fonte (o cadastro é global e inclui vazias).
+    db()
+      .selectDistinct({ areaId: question.areaId, disciplineId: question.disciplineId })
+      .from(question)
+      .where(poolFilters(userId, { ...cfg, areaId: null, disciplineIds: [], topics: [] }, false)),
   ])
   return {
     available: pool.length,
     topics: topicRows.map((t) => t.topic!).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    withQuestions: {
+      areaIds: [...new Set(taxonomyRows.map((r) => r.areaId))],
+      disciplineIds: [...new Set(taxonomyRows.map((r) => r.disciplineId))],
+    },
     kinds: pool.slice(0, 100).map((q) => q.items.map((it) => presentAs(it, cfg.answerFormat))),
     answerFormat: cfg.answerFormat,
   }
