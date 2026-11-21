@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { pickWeakest } from '@shared/stats'
 import { initials, useAuth } from '@/app/auth-context'
 import { api, unwrap } from '@/lib/api'
 import { ACTIVITY_28D, MY_HISTORY, RANKING, TOPIC_PERFORMANCE } from '@/mocks/data'
@@ -45,7 +46,7 @@ export interface RankRow {
 function mockDashboard(meId: string, myQuestions: number): DashboardData {
   const mine = RANKING.find((r) => r.userId === meId)!
   const answered = MY_HISTORY.reduce((a, h) => a + h.questions, 0)
-  const weakest = [...TOPIC_PERFORMANCE].sort((a, b) => a.accuracy - b.accuracy)[0]
+  const weakest = pickWeakest(TOPIC_PERFORMANCE)
   return {
     points: mine.points,
     rank: [...RANKING].sort((a, b) => b.points - a.points).findIndex((r) => r.userId === meId) + 1,

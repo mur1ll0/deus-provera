@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { brtDay, computeStreak, lastDays } from '../stats'
+import { brtDay, computeStreak, lastDays, pickWeakest } from '../stats'
+
+describe('pickWeakest (ponto mais fraco do painel)', () => {
+  // Caso real que motivou a regra: só "Câncer de mama" tinha 5 respostas e era apontado com 60%.
+  const topics = [
+    { topic: 'Câncer de mama', accuracy: 0.6, answered: 5 },
+    { topic: 'HPV, NIC e câncer de colo', accuracy: 0.25, answered: 4 },
+    { topic: 'Sangramento uterino anormal', accuracy: 1 / 3, answered: 3 },
+    { topic: 'Climatério', accuracy: 0, answered: 2 },
+    { topic: 'Vaginites', accuracy: 0, answered: 2 },
+    { topic: 'Uma resposta só', accuracy: 0, answered: 1 },
+  ]
+  it('aponta o menor acerto, não o assunto mais respondido', () => {
+    expect(pickWeakest(topics)?.topic).toBe('Climatério')
+  })
+  it('ignora assuntos com uma resposta só e desempata pelo mais respondido', () => {
+    expect(pickWeakest([{ topic: 'a', accuracy: 0, answered: 1 }, { topic: 'b', accuracy: 0.5, answered: 2 }])?.topic).toBe('b')
+    expect(pickWeakest([{ topic: 'a', accuracy: 0, answered: 2 }, { topic: 'b', accuracy: 0, answered: 3 }])?.topic).toBe('b')
+  })
+  it('sem respostas suficientes → null', () => {
+    expect(pickWeakest([{ accuracy: 0, answered: 1 }])).toBeNull()
+  })
+})
 
 describe('brtDay / lastDays (fuso de Brasília)', () => {
   it('antes das 3h UTC ainda é o dia anterior em Brasília', () => {

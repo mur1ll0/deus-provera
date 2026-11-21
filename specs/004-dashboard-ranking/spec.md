@@ -43,7 +43,7 @@ Como estudante, quero ver no painel minha pontuação, minha nota, acerto médio
 1. **Dado** um usuário com simulados finalizados, **quando** abre o painel, **então** vê os cartões: Pontuação (com posição no ranking), Acerto médio (com total de questões), Simulados feitos (com nº de provas), Tempo médio por questão, Sequência de dias (com recorde) e Minhas questões.
 2. **Dado** respostas nos últimos 30 dias, **quando** a nota é calculada, **então** ela é igual a `performanceGrade(itens)` (prova peso 2) com uma casa decimal, e o painel mostra a variação em relação à semana anterior.
 3. **Dado** respostas por assunto, **quando** vejo o "Mapa de desempenho", **então** cada assunto mostra o % de acerto com cor (verde ≥ 75%, amarelo ≥ 60%, vermelho < 60%) e o número de questões respondidas.
-4. **Dado** um assunto com o pior acerto (mínimo de 5 respostas), **quando** abro o painel, **então** o destaque sugere "Seu ponto mais fraco agora é X" e oferece o CTA de treino focado já filtrado.
+4. **Dado** um assunto com o pior acerto (mínimo de 2 respostas; empate → o mais respondido), **quando** abro o painel, **então** o destaque sugere "Seu ponto mais fraco agora é X" e oferece o CTA de treino focado já filtrado.
 5. **Dado** atividade nos últimos 28 dias, **quando** vejo o heatmap, **então** cada dia mostra a intensidade por nº de questões respondidas (fuso de Brasília).
 6. **Dado** um usuário novo sem dados, **quando** abre o painel, **então** vê estados vazios com CTA para "Importar questões" e "Fazer o primeiro simulado", sem zeros enganosos (nota exibida como "—").
 
@@ -94,7 +94,7 @@ Como estudante, quero saber como os pontos são calculados e ter certeza de que 
 - **FR-002**: O sistema DEVE exibir a Nota de desempenho (0–10, 1 casa) = `performanceGrade` das respostas corrigidas dos últimos 30 dias, com variação semanal. Com menos de 10 respostas, mostrar "—" e "faça mais questões".
 - **FR-003**: O sistema DEVE exibir Acerto médio (%) e total de questões respondidas, Simulados finalizados (com quantos foram provas), Tempo médio por questão, Sequência de dias (atual e recorde) e nº de Minhas questões.
 - **FR-004**: O sistema DEVE exibir o mapa de desempenho por Disciplina › Assunto com % de acerto, nº de respostas e cor por faixa.
-- **FR-005**: O sistema DEVE destacar o assunto mais fraco (mínimo de 5 respostas) com CTA de treino focado pré-configurado.
+- **FR-005**: O sistema DEVE destacar o assunto mais fraco (menor acerto entre os assuntos com ao menos 2 respostas; empate → o mais respondido) com CTA de treino focado pré-configurado.
 - **FR-006**: O sistema DEVE exibir o heatmap de atividade dos últimos 28 dias e o gráfico de evolução do acerto dos últimos 10 simulados, distinguindo prova de treino.
 - **FR-007**: O sistema DEVE listar os últimos 5 simulados (título, data, modo, questões, acerto, tempo, pontos).
 

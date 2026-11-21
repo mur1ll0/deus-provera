@@ -1,6 +1,6 @@
 import { and, count, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { performanceGrade } from '../../shared/scoring'
-import { brtDay, computeStreak, lastDays, MIN_ANSWERS_FOR_GRADE, MIN_ANSWERS_FOR_WEAKEST } from '../../shared/stats'
+import { brtDay, computeStreak, lastDays, MIN_ANSWERS_FOR_GRADE, pickWeakest } from '../../shared/stats'
 import { db, schema } from '../db/client'
 import { getRanking } from './ranking'
 
@@ -70,7 +70,7 @@ export async function getDashboard(userId: string): Promise<DashboardView> {
     byTopic.set(k, t)
   }
   const topics = [...byTopic.values()].map((t) => ({ discipline: t.discipline, topic: t.topic, accuracy: t.sum / t.n, answered: t.n })).sort((x, y) => y.answered - x.answered)
-  const weakest = [...topics].filter((t) => t.answered >= MIN_ANSWERS_FOR_WEAKEST).sort((x, y) => x.accuracy - y.accuracy)[0] ?? null
+  const weakest = pickWeakest(topics)
 
   const perDay = new Map<string, number>()
   for (const a of answers) {

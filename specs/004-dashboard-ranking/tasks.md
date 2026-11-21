@@ -20,7 +20,7 @@
 
 - [x] T009 `server/services/stats.ts`: KPIs (pontos, acerto, respondidas, simulados/provas, tempo médio, minhas questões)
 - [x] T010 `server/services/stats.ts`: nota de desempenho de 30 dias + variação semanal (`performanceGrade`), "—" com < 10 respostas
-- [x] T011 `server/services/stats.ts`: mapa por Disciplina › Assunto, assunto mais fraco (≥ 5 respostas), heatmap de 28 dias (BRT), evolução (10 últimos), recentes (5)
+- [x] T011 `server/services/stats.ts`: mapa por Disciplina › Assunto, assunto mais fraco (≥ 2 respostas, `pickWeakest` em `shared/stats.ts`; era ≥ 5 até 2026-11-20), heatmap de 28 dias (BRT), evolução (10 últimos), recentes (5)
 - [x] T012 `server/routes/me.ts`: `GET /api/me/dashboard` montado em `server/app.ts` — rota `GET /api/stats/me` (`server/routes/stats.ts`), como previsto em docs/04
 - [x] T013 [P] UI do painel (`src/features/dashboard/DashboardPage.tsx`, protótipo)
 - [x] T014 Hook `useDashboard()` em `src/lib/api.ts` e substituição de `MY_HISTORY`/`TOPIC_PERFORMANCE`/`ACTIVITY_28D` mock

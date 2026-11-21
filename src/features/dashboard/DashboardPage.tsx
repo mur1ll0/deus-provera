@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { ArrowRight, Clock, Flame, FileUp, Gauge, Medal, Target, Timer, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router'
+import { MIN_ANSWERS_FOR_WEAKEST } from '@shared/stats'
 import { RankingPanel } from '@/components/RankingPanel'
 import { Badge, Button, Card, EmptyState, ProgressRing } from '@/components/ui'
 import { FullScreen } from '@/app/RequireAuth'
@@ -39,7 +40,7 @@ export function DashboardPage() {
                 ) : empty ? (
                   'Importe suas listas ou cadastre questões e faça o primeiro simulado: suas estatísticas aparecem aqui.'
                 ) : (
-                  'Continue respondendo: com 5 respostas num assunto, mostramos aqui seu ponto mais fraco.'
+                  `Continue respondendo: com ${MIN_ANSWERS_FOR_WEAKEST} respostas num assunto, mostramos aqui seu ponto mais fraco.`
                 )}
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
@@ -93,10 +94,15 @@ export function DashboardPage() {
               {d.topics.map((t) => (
                 <li key={`${t.discipline}|${t.topic}`}>
                   <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="font-bold">
+                    <span className="min-w-0 font-bold">
                       {t.topic} <span className="font-normal text-muted">· {t.discipline}</span>
                     </span>
-                    <span className="font-display font-bold tabular-nums">{pct(t.accuracy)}</span>
+                    <span className="shrink-0 pl-2 text-right">
+                      <span className="mr-2 text-xs text-muted tabular-nums">
+                        {t.answered} {t.answered === 1 ? 'resposta' : 'respostas'}
+                      </span>
+                      <span className="font-display font-bold tabular-nums">{pct(t.accuracy)}</span>
+                    </span>
                   </div>
                   <div className="h-2.5 overflow-hidden rounded-full bg-brand-50">
                     <div

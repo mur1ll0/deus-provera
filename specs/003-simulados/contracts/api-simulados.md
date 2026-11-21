@@ -181,7 +181,7 @@ Fora do simulado: `POST /api/ai/distractors { items: [{ id, stem, prompt?, expec
   - respondidas, acerto, simulados e provas em 14 dias;
   - tempo médio por questão e sequência de estudo (BRT);
   - minhas questões;
-  - mapa por Disciplina › Assunto e o assunto mais fraco (≥ 5 respostas);
+  - mapa por Disciplina › Assunto e o assunto mais fraco (≥ 2 respostas; empate → o mais respondido);
   - atividade de 28 dias e os últimos 10 simulados.
 
 ## Testes

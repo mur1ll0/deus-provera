@@ -43,5 +43,14 @@ export function computeStreak(days: Iterable<string>, today = new Date()): { cur
 
 /** Mínimo de respostas corrigidas para exibir a nota de desempenho (abaixo disso: "—"). */
 export const MIN_ANSWERS_FOR_GRADE = 10
-/** Mínimo de respostas num assunto para apontá-lo como "ponto mais fraco". */
-export const MIN_ANSWERS_FOR_WEAKEST = 5
+/**
+ * Mínimo de respostas num assunto para apontá-lo como "ponto mais fraco" — evita que um único erro
+ * decida. Era 5: com poucos simulados, só o assunto mais respondido passava e o painel apontava como
+ * "mais fraco" um assunto com acerto ALTO enquanto o mapa mostrava outros em 0%.
+ */
+export const MIN_ANSWERS_FOR_WEAKEST = 2
+
+/** Ponto mais fraco: menor acerto entre os assuntos com respostas suficientes; empate → o mais respondido. */
+export function pickWeakest<T extends { accuracy: number; answered: number }>(topics: readonly T[]): T | null {
+  return [...topics].filter((t) => t.answered >= MIN_ANSWERS_FOR_WEAKEST).sort((x, y) => x.accuracy - y.accuracy || y.answered - x.answered)[0] ?? null
+}
