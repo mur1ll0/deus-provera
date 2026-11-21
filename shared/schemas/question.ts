@@ -24,6 +24,8 @@ export const QUESTION_LIMITS = {
   explanation: 4_000,
   keyPoint: 500,
   keyPoints: 20,
+  /** Rótulo da pergunta ("a", "1", "Paciente 1"…): ≥ o `rotulo` do contrato de importação (10). */
+  label: 20,
   alternatives: 8,
   items: 20,
 } as const
@@ -40,7 +42,7 @@ export const alternativeInput = z.object({
 export const itemInput = z
   .object({
   id: z.string().max(64).optional(),
-  label: optText(8),
+  label: optText(QUESTION_LIMITS.label),
   prompt: text(QUESTION_LIMITS.prompt).default(''),
   type: z.enum(['objetiva', 'discursiva']),
   expectedAnswer: optText(QUESTION_LIMITS.answer),

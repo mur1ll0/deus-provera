@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { CheckCircle2, Circle, ImageIcon, ListPlus, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { QuestionItem } from '@shared/domain'
+import { QUESTION_LIMITS } from '@shared/schemas/question'
 import { Badge, Button, DemoTag, Field, inputClass, Modal, Segmented } from '@/components/ui'
 import { LETTERS } from '@/lib/format'
 import { useDistractors } from '@/lib/ai'
@@ -211,10 +212,11 @@ function ItemEditor({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {multi && (
           <input
-            className="w-14 rounded-lg border border-line bg-white px-2 py-1 text-center font-display text-sm font-bold"
+            className="w-14 min-w-14 rounded-lg border border-line bg-white px-2 py-1 text-center font-display text-sm font-bold [field-sizing:content]"
             value={item.label ?? ''}
             placeholder={String.fromCharCode(97 + index)}
-            onChange={(e) => onChange({ label: e.target.value.slice(0, 4) || undefined })}
+            maxLength={QUESTION_LIMITS.label}
+            onChange={(e) => onChange({ label: e.target.value.slice(0, QUESTION_LIMITS.label) || undefined })}
             aria-label="Rótulo da pergunta"
           />
         )}

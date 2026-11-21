@@ -232,7 +232,8 @@ export function ImportPage() {
           onBack={() => setStep('entrada')}
           saving={commit.isPending}
           problems={problems}
-          error={commit.error && !(commit.error instanceof CommitError) ? commit.error.message : problems.length ? null : undefined}
+          // CommitError sem itens (400 sem lista) também precisa aparecer — antes ficava mudo.
+          error={commit.error && (!(commit.error instanceof CommitError) || !commit.error.problems.length) ? commit.error.message : problems.length ? null : undefined}
           onConfirm={() => {
             if (!real) {
               const n = commitImport(review.cards, review.drafts) || review.cards.reduce((a, c) => a + c.questionIds.length, 0)

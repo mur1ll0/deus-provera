@@ -32,6 +32,32 @@ test('agente externo: JSON → revisão → salvar → banco de questões', asyn
 })
 
 /**
+ * "Cliquei em Confirmar e nada aconteceu": com muitos cards o aviso de problemas fica no fim da página.
+ * Ao salvar com item inválido, o resumo aparece na barra do botão e a tela rola até o aviso.
+ * Rótulos longos do contrato ("Paciente 1", até 10) não podem bloquear o commit.
+ */
+test('revisão: item inválido aparece junto ao botão e o aviso entra na tela @mobile', async ({ page }) => {
+  const questoes = Array.from({ length: 8 }, (_, i) => ({
+    area: i === 7 ? 'Sem área' : 'Medicina',
+    disciplina: 'Disciplina E2E',
+    assunto: `Assunto E2E ${i + 1}`,
+    enunciado: `[E2E] Caso ${i + 1}: paciente com queixa ginecológica. Responda:`,
+    perguntas: [1, 2].map((n) => ({ rotulo: `Paciente ${n}`, texto: `Conduta ${n}?`, tipo: 'discursiva', resposta_esperada: `Conduta ${n}.` })),
+  }))
+  await page.goto('/importar')
+  await page.getByText('Usar meu agente de IA').click()
+  await page.getByRole('checkbox', { name: /Compartilhar as questões importadas/ }).uncheck()
+  await page.getByRole('textbox').last().fill(JSON.stringify({ versao: '2.0', origem: { arquivo: 'e2e-problemas.json' }, questoes }))
+  await page.getByRole('button', { name: 'Validar e revisar →' }).click()
+  await page.getByRole('button', { name: /Confirmar e salvar 8/ }).click()
+  // Só o card sem área bloqueia (os rótulos "Paciente N" passam).
+  await expect(page.getByRole('button', { name: /1 item precisa de ajuste — ver/ })).toBeVisible()
+  const alert = page.getByRole('alert', { name: 'Ajuste estes itens antes de salvar' })
+  await expect(alert).toBeInViewport()
+  await expect(alert.getByRole('listitem')).toHaveCount(1)
+})
+
+/**
  * Marco S2 (opt-in: E2E_AI=1): os PDFs de exemplo pelo fluxo real — extração no navegador, visão das imagens,
  * pipeline de IA no servidor (OpenRouter), revisão e salvar. Conteúdo de terceiros: importado como privado e
  * apagado no teardown.

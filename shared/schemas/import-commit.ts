@@ -42,15 +42,56 @@ export interface CommitIssue {
   message: string
 }
 
+/** Nome do campo (último trecho do caminho) para as mensagens padrão do zod. */
+const FIELD_NAMES: Record<string, string> = {
+  area: 'Área',
+  discipline: 'Disciplina',
+  topic: 'Assunto',
+  description: 'Descrição',
+  sourceLabel: 'Rótulo da questão',
+  stem: 'Enunciado',
+  items: 'Perguntas',
+  label: 'Rótulo',
+  prompt: 'Texto',
+  expectedAnswer: 'Resposta esperada',
+  keyPoints: 'Pontos de acerto',
+  alternatives: 'Alternativas',
+  text: 'Texto da alternativa',
+  explanation: 'Explicação',
+}
+
+/**
+ * Mensagem em pt-BR para os erros padrão do zod (as mensagens próprias dos schemas já vêm em pt-BR).
+ * Ex.: "Pergunta 2 · Rótulo: no máximo 20 caracteres."
+ */
+function issueMessage(i: z.core.$ZodIssue): string {
+  if (!/^(Too (big|small)|Invalid)\b/.test(i.message)) return i.message
+  const keys = i.path.filter((p): p is string => typeof p === 'string')
+  const field = [...keys].reverse().map((k) => FIELD_NAMES[k]).find(Boolean)
+  const at = i.path.indexOf('items')
+  const item = at >= 0 && typeof i.path[at + 1] === 'number' ? `Pergunta ${(i.path[at + 1] as number) + 1}` : undefined
+  const where = [item, field].filter(Boolean).join(' · ')
+  let what = 'valor inválido.'
+  if (i.code === 'too_big') what = i.origin === 'string' ? `no máximo ${i.maximum} caracteres.` : `no máximo ${i.maximum} itens.`
+  else if (i.code === 'too_small') what = i.origin === 'string' ? `no mínimo ${i.minimum} caracteres.` : `no mínimo ${i.minimum} itens.`
+  return where ? `${where}: ${what}` : what.charAt(0).toUpperCase() + what.slice(1)
+}
+
 /** zod → lista por card/questão (o cliente mapeia de volta para os rascunhos da revisão). */
 export function commitIssues(error: z.ZodError): CommitIssue[] {
-  return error.issues.map((i) => {
+  const seen = new Set<string>()
+  return error.issues.flatMap((i) => {
     const [, card, , question] = i.path
-    return {
+    const issue: CommitIssue = {
       card: typeof card === 'number' ? card : -1,
       question: i.path[2] === 'questions' && typeof question === 'number' ? question : undefined,
-      message: i.message,
+      message: issueMessage(i),
     }
+    // O mesmo problema repetido na mesma questão (ex.: várias perguntas) aparece uma vez só.
+    const key = `${issue.card}|${issue.question ?? ''}|${issue.message}`
+    if (seen.has(key)) return []
+    seen.add(key)
+    return [issue]
   })
 }
 

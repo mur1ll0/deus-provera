@@ -1,7 +1,7 @@
 import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import clsx from 'clsx'
 import { AlertTriangle, BookOpen, FolderPlus, GripVertical, Layers, ListChecks, Pencil, Sparkles, Trash2 } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Badge, Button, Card, DemoTag, Field, inputClass, Modal } from '@/components/ui'
 import { useDistractors } from '@/lib/ai'
 import { uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
@@ -39,6 +39,12 @@ export function ReviewBoard({
   const [bulk, setBulk] = useState<'idle' | 'running' | 'done'>('idle')
   const [bulkError, setBulkError] = useState<string | null>(null)
   const ai = useDistractors()
+  const problemsRef = useRef<HTMLElement>(null)
+  const hasProblems = problems.length > 0 || !!error
+  // O aviso fica depois de todos os cards: ao aparecer (tentativa de salvar), rola até ele.
+  useEffect(() => {
+    if (hasProblems) problemsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [hasProblems])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor))
 
   const { cards, drafts } = state
@@ -202,8 +208,8 @@ export function ReviewBoard({
         <DragOverlay>{activeDraft ? <QuestionChip q={activeDraft} dragging /> : null}</DragOverlay>
       </DndContext>
 
-      {(problems.length > 0 || error) && (
-        <section role="alert" aria-labelledby="review-problems" className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+      {hasProblems && (
+        <section ref={problemsRef} role="alert" aria-labelledby="review-problems" className="scroll-mb-40 rounded-2xl border border-rose-200 bg-rose-50 p-4">
           <h2 id="review-problems" className="flex items-center gap-2 font-display text-sm font-bold text-rose-700">
             <AlertTriangle size={16} /> {error ?? 'Ajuste estes itens antes de salvar'}
           </h2>
@@ -246,8 +252,19 @@ export function ReviewBoard({
         <Button variant="ghost" onClick={onBack}>
           ← Voltar
         </Button>
-        <div className="flex items-center gap-3">
-          <span className="hidden text-sm text-muted sm:inline">Tudo certo? As questões serão salvas no seu banco.</span>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {hasProblems ? (
+            <button
+              type="button"
+              onClick={() => problemsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+              className="flex items-center gap-1.5 text-left text-sm font-bold text-rose-700 hover:underline"
+            >
+              <AlertTriangle size={15} className="shrink-0" />
+              {problems.length > 0 ? `${problems.length} ${problems.length === 1 ? 'item precisa' : 'itens precisam'} de ajuste — ver` : 'Não foi possível salvar — ver detalhes'}
+            </button>
+          ) : (
+            <span className="hidden text-sm text-muted sm:inline">Tudo certo? As questões serão salvas no seu banco.</span>
+          )}
           <Button size="lg" onClick={onConfirm} disabled={total === 0 || saving}>
             <ListChecks size={18} /> {saving ? 'Salvando…' : `Confirmar e salvar ${total}`}
           </Button>

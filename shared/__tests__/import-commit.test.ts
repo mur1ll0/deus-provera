@@ -48,6 +48,22 @@ describe('importCommitInput (validação do commit)', () => {
     expect(issues.every((i) => i.card === 0 && i.question === undefined)).toBe(true)
   })
 
+  it('aceita rótulos de pergunta do contrato de importação (até 10, ex.: "Paciente 1")', () => {
+    const items = [1, 2].map((n) => ({ label: `Paciente ${n}`, prompt: 'Qual o diagnóstico?', type: 'discursiva' as const, expectedAnswer: 'Prolapso' }))
+    const { body } = toCommitInput([{ area: 'Medicina', discipline: 'Ginecologia', questionIds: ['a'] }], { a: draft({ items }) })
+    expect(importCommitInput.safeParse(body).success).toBe(true)
+  })
+
+  it('traduz as mensagens padrão do zod, indica a pergunta e não repete o mesmo problema', () => {
+    const items = [1, 2].map((n) => ({ label: 'x'.repeat(30), prompt: `Pergunta ${n}`, type: 'discursiva' as const, expectedAnswer: 'Prolapso' }))
+    const { body } = toCommitInput([{ area: 'Medicina', discipline: 'Ginecologia', questionIds: ['a'] }], { a: draft({ items }) })
+    const issues = commitIssues(importCommitInput.safeParse(body).error!)
+    expect(issues).toEqual([
+      { card: 0, question: 0, message: 'Pergunta 1 · Rótulo: no máximo 20 caracteres.' },
+      { card: 0, question: 0, message: 'Pergunta 2 · Rótulo: no máximo 20 caracteres.' },
+    ])
+  })
+
   it('exige ao menos um card com questões', () => {
     expect(importCommitInput.safeParse({ cards: [] }).success).toBe(false)
   })
