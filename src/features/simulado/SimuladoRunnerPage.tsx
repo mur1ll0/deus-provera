@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import type { AnswerKind, ItemAnswer, Question, QuestionItem, SimuladoAttempt } from '@shared/domain'
+import { itemMarker } from '@shared/item-label'
 import { useAuth } from '@/app/auth-context'
 import { FullScreen } from '@/app/RequireAuth'
 import { Logo } from '@/components/Logo'
@@ -536,7 +537,13 @@ function ItemView({
     <section className={clsx(multi && 'rounded-2xl border border-line p-4')}>
       {multi && (
         <div className="mb-3 flex items-start gap-1.5 font-display text-base font-semibold leading-snug">
-          <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm text-white">{item.label ?? index + 1}</span>
+          <span
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs text-white"
+            title={item.label ?? undefined}
+          >
+            <span aria-hidden>{itemMarker(item.label, index)}</span>
+            <span className="sr-only">{item.label ? `${item.label}:` : `Pergunta ${index + 1}:`}</span>
+          </span>
           <div className="min-w-0 flex-1 pt-0.5">
             <RichText text={item.prompt} />
             {item.type === 'discursiva' && kind === 'objetiva' && <Badge tone="gold" className="mt-1">alternativas geradas por IA</Badge>}
