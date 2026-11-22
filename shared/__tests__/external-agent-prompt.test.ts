@@ -24,6 +24,20 @@ describe('prompt do agente externo', () => {
     expect(hasRichTable(r.data?.questoes[0].enunciado)).toBe(true)
   })
 
+  it('manda completar os dois formatos: alternativas na discursiva e resposta discursiva na objetiva (FR-R7)', () => {
+    expect(EXTERNAL_AGENT_PROMPT).toMatch(/OBRIGATÓRIO — COMPLETE OS DOIS FORMATOS/)
+    expect(EXTERNAL_AGENT_PROMPT).toMatch(/NÃO mude o "tipo"/)
+    expect(EXTERNAL_AGENT_PROMPT).toMatch(/Pergunta objetiva .* escreva em "resposta_esperada"/)
+    const example = EXTERNAL_AGENT_PROMPT.match(/```json\n(\{[\s\S]*?\n)```/)?.[1] ?? ''
+    const items = parseImportText(example).data?.questoes.flatMap((q) => q.perguntas) ?? []
+    const discursiva = items.find((i) => i.tipo === 'discursiva')
+    const objetiva = items.find((i) => i.tipo === 'objetiva')
+    expect(discursiva?.alternativas?.every((a) => a.gerada_por_ia)).toBe(true)
+    expect(objetiva?.resposta_esperada).toBeTruthy()
+    expect(objetiva?.pontos_chave?.length).toBeGreaterThanOrEqual(3)
+    expect(objetiva?.alternativas?.some((a) => a.gerada_por_ia)).toBe(false)
+  })
+
   it('a grade POP-Q do prompt vira uma tabela 3 × 6 na tela', () => {
     const grid = EXTERNAL_AGENT_PROMPT.split('\n').filter((l) => /^\s+\| /.test(l)).join('\n')
     const table = parseRichText(grid).find((b) => b.kind === 'table')

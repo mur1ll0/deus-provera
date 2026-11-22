@@ -41,7 +41,7 @@ Substitui o v1 (uma entrada por subitem com `contexto`/`caso_id`), que **não é
 | `rotulo` | string ≤ 10 | não | "a", "b", "1"… (nulo na pergunta única) |
 | `texto` | string ≤ 3000 | não (padrão `""`) | inclui complementos como "Justifique." |
 | `tipo` | `objetiva`\|`discursiva` | sim | tipo **original** da resposta no material |
-| `resposta_esperada` | string ≤ 12000 | se `discursiva` | literal do material |
+| `resposta_esperada` | string ≤ 12000 | se `discursiva` | literal do material; na `objetiva`, opcional (o agente externo a escreve a partir da alternativa correta e do comentário — FR-R7), e permite usar a pergunta em simulado discursivo |
 | `pontos_chave` | string[] (≤ 15, cada ≤ 300) | não | pontos de acerto para correção |
 | `alternativas` | array (≤ 8) | se `objetiva` | se presente (em qualquer tipo): ≥ 2 e **exatamente 1** `correta: true` |
 
