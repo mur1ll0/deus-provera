@@ -13,7 +13,7 @@
  *     tudo falhar, fallback determinístico (segmentador/heurísticas) marcando "revisar".
  */
 
-export type AiTask = 'structure' | 'classify' | 'distractors' | 'explain' | 'grade' | 'vision' | 'guard'
+export type AiTask = 'structure' | 'classify' | 'distractors' | 'answers' | 'explain' | 'grade' | 'vision' | 'guard'
 
 export interface TaskConfig {
   /** Cadeia em ordem de preferência. Cada elo é uma chamada; dentro dela o OpenRouter ainda aplica `models`. */
@@ -56,6 +56,14 @@ export const TASKS: Record<AiTask, TaskConfig> = {
     chain: ['baidu/ernie-5.5-flash-preview:free', 'nvidia/nemotron-3.5-super-vl:free', FREE_ROUTER],
     structured: true,
     temperature: 0.7,
+    maxOutputTokens: 16_000,
+    timeoutMs: 120_000,
+  },
+  // Resposta escrita + pontos de acerto a partir da alternativa correta (objetiva → discursiva).
+  answers: {
+    chain: ['baidu/ernie-5.5-flash-preview:free', 'nvidia/nemotron-3.5-super-vl:free', FREE_ROUTER],
+    structured: true,
+    temperature: 0.2,
     maxOutputTokens: 16_000,
     timeoutMs: 120_000,
   },

@@ -78,6 +78,24 @@ describe('parseImportText (formato v2: enunciado + perguntas)', () => {
   it('reporta JSON malformado', () => {
     expect(parseImportText('{ nope').errors[0].path).toBe('(raiz)')
   })
+
+  it('enunciado vazio com UMA pergunta: o texto da pergunta sobe para o enunciado', () => {
+    const q = { ...valid.questoes[1], enunciado: '', perguntas: [{ ...valid.questoes[1].perguntas[0], texto: 'Qual é o ponto zero do POP-Q?' }] }
+    const r = parseImportText(JSON.stringify({ versao: '2.0', questoes: [q] }))
+    expect(r.ok).toBe(true)
+    expect(r.data?.questoes[0].enunciado).toBe('Qual é o ponto zero do POP-Q?')
+    expect(r.data?.questoes[0].perguntas[0].texto).toBe('')
+  })
+
+  it('enunciado de enfeite com várias perguntas vira "Responda às perguntas a seguir sobre <assunto>."', () => {
+    for (const enunciado of ['', '.', '—', 'QUESTÃO 3']) {
+      const q = { ...valid.questoes[0], assunto: 'Rastreamento do câncer de colo', enunciado }
+      const r = parseImportText(JSON.stringify({ versao: '2.0', questoes: [q] }))
+      expect(r.ok).toBe(true)
+      expect(r.data?.questoes[0].enunciado).toBe('Responda às perguntas a seguir sobre Rastreamento do câncer de colo.')
+      expect(r.data?.questoes[0].perguntas).toHaveLength(2)
+    }
+  })
 })
 
 describe('splitPromptAnswer', () => {

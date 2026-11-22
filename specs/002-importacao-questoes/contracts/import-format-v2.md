@@ -68,6 +68,7 @@ Substitui o v1 (uma entrada por subitem com `contexto`/`caso_id`), que **não é
 
 - Aceita JSON puro **ou** dentro de blocos ` ```json … ``` ` (resposta típica de chatbot).
 - **Vários blocos** (resposta em "Parte 1/3, 2/3…") são unidos em um único arquivo.
+- **Enunciado vazio ou "de enfeite"** (`""`, `"."`, `"—"`, `"QUESTÃO 3"`) não derruba a importação: com UMA pergunta, o texto dela sobe para o enunciado (e a pergunta fica com `texto: ""`); com várias, o enunciado vira `"Responda às perguntas a seguir sobre <assunto>."` (`fillBlankStem`, FR-R9).
 - Até 50 erros são devolvidos, cada um com o caminho (`questoes.3.perguntas.1.alternativas`).
 
 ## Exemplo (III UNIDADE.pdf, QUESTÃO 8)

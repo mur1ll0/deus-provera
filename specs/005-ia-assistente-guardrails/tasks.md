@@ -72,6 +72,7 @@
 
 - [ ] T043 [P] Política de privacidade: informar que o conteúdo das questões é processado por modelos gratuitos de terceiros via OpenRouter
 - [x] T044 [P] Expirar registros de `ai_call` com mais de 90 dias (cron diário) — rotina diária `/api/cron/daily` (Vercel Cron) com `CRON_SECRET`
+- [x] T046 Tarefa `answers` (objetiva → resposta escrita + pontos de acerto) e `POST /api/ai/answers` (≤ 6 perguntas, `reserveAiRequest`, guardrail `inspectText` na entrada, 429/503 tratados) — spec 002 FR-R8
 - [ ] T045 Atualizar a tabela de modelos em `docs/05-pipeline-ia.md` a cada execução do eval
 
 ## Definição de pronto

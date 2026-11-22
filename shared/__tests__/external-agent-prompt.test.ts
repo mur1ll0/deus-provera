@@ -38,6 +38,12 @@ describe('prompt do agente externo', () => {
     expect(objetiva?.alternativas?.some((a) => a.gerada_por_ia)).toBe(false)
   })
 
+  it('manda nunca deixar o enunciado vazio e diz como montar enunciado + perguntas', () => {
+    expect(EXTERNAL_AGENT_PROMPT).toMatch(/"enunciado" NUNCA pode ficar vazio/)
+    expect(EXTERNAL_AGENT_PROMPT).toMatch(/Só há UMA pergunta .* vai para o "enunciado"/)
+    expect(EXTERNAL_AGENT_PROMPT).toContain('Responda às perguntas a seguir sobre <assunto>.')
+  })
+
   it('a grade POP-Q do prompt vira uma tabela 3 × 6 na tela', () => {
     const grid = EXTERNAL_AGENT_PROMPT.split('\n').filter((l) => /^\s+\| /.test(l)).join('\n')
     const table = parseRichText(grid).find((b) => b.kind === 'table')

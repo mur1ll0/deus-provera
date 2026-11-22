@@ -157,6 +157,7 @@ export function Modal({
   children,
   footer,
   wide,
+  xl,
 }: {
   open: boolean
   onClose: () => void
@@ -164,6 +165,8 @@ export function Modal({
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  /** Bem largo (editor de questão em duas colunas no desktop). */
+  xl?: boolean
 }) {
   useEffect(() => {
     if (!open) return
@@ -179,7 +182,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        className={clsx('card animate-pop flex max-h-[92vh] w-full flex-col rounded-b-none sm:rounded-b-[var(--radius-card)]', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}
+        className={clsx('card animate-pop flex max-h-[92vh] w-full flex-col rounded-b-none sm:rounded-b-[var(--radius-card)]', xl ? 'sm:max-w-6xl' : wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}
       >
         <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-4">
           <h3 className="text-base font-bold">{title}</h3>

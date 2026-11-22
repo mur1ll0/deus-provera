@@ -1,9 +1,10 @@
 import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import clsx from 'clsx'
-import { AlertTriangle, BookOpen, FolderPlus, GripVertical, Layers, ListChecks, Pencil, Sparkles, Trash2 } from 'lucide-react'
+import { AlertTriangle, BookOpen, FolderPlus, GripVertical, Layers, ListChecks, Pencil, PenLine, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Badge, Button, Card, DemoTag, Field, inputClass, Modal } from '@/components/ui'
-import { useDistractors } from '@/lib/ai'
+import { needsDiscursive, needsMultipleChoice } from '@shared/completeness'
+import { runAiBatches, useDistractors, useWrittenAnswers } from '@/lib/ai'
 import { uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
 import { QuestionEditor } from '@/features/questions/QuestionEditor'
 import type { ReviewProblem } from './commit'
@@ -36,9 +37,10 @@ export function ReviewBoard({
   const [editingCard, setEditingCard] = useState<ImportCard | null>(null)
   const [editingQ, setEditingQ] = useState<DraftQuestion | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [bulk, setBulk] = useState<'idle' | 'running' | 'done'>('idle')
+  const [bulk, setBulk] = useState<'idle' | 'running' | 'running-written' | 'done'>('idle')
   const [bulkError, setBulkError] = useState<string | null>(null)
   const ai = useDistractors()
+  const writtenAi = useWrittenAnswers()
   const problemsRef = useRef<HTMLElement>(null)
   const hasProblems = problems.length > 0 || !!error
   // O aviso fica depois de todos os cards: ao aparecer (tentativa de salvar), rola até ele.
@@ -50,7 +52,8 @@ export function ReviewBoard({
   const { cards, drafts } = state
   const total = cards.reduce((a, c) => a + c.questionIds.length, 0)
   const flagged = Object.values(drafts).filter((d) => d.flags?.length).length
-  const perguntasSemAlt = Object.values(drafts).reduce((a, d) => a + d.items.filter((i) => !i.alternatives?.length && i.expectedAnswer).length, 0)
+  const perguntasSemAlt = Object.values(drafts).reduce((a, d) => a + d.items.filter(needsMultipleChoice).length, 0)
+  const perguntasSemEscrita = Object.values(drafts).reduce((a, d) => a + d.items.filter(needsDiscursive).length, 0)
 
   const cardOf = useMemo(() => {
     const m = new Map<string, string>()
@@ -110,7 +113,7 @@ export function ReviewBoard({
     setBulk('running')
     setBulkError(null)
     const reqs = Object.values(drafts).flatMap((d) =>
-      d.items.filter((it) => !it.alternatives?.length && it.expectedAnswer?.trim()).map((it) => ({ id: it.id, stem: d.stem, prompt: it.prompt, expectedAnswer: it.expectedAnswer!.trim() })),
+      d.items.filter(needsMultipleChoice).map((it) => ({ id: it.id, stem: d.stem, prompt: it.prompt, expectedAnswer: it.expectedAnswer!.trim() })),
     )
     try {
       const out = await ai.generate(reqs)
@@ -122,6 +125,27 @@ export function ReviewBoard({
       setBulk('idle')
       setBulkError((err as Error).message || 'IA indisponível agora.')
     }
+  }
+
+  /** Resposta escrita + pontos de acerto para as perguntas objetivas sem resposta (FR-R8). */
+  async function generateAllWritten() {
+    setBulk('running-written')
+    setBulkError(null)
+    const reqs = Object.values(drafts).flatMap((d) =>
+      d.items.filter(needsDiscursive).map((it) => ({
+        id: it.id,
+        stem: d.stem.slice(0, 8000),
+        prompt: it.prompt?.slice(0, 4000),
+        alternatives: (it.alternatives ?? []).map((a) => ({ text: a.text.slice(0, 1500), correct: a.correct, explanation: a.explanation?.slice(0, 2000) })),
+      })),
+    )
+    const r = await runAiBatches(reqs, writtenAi.generate)
+    const next = Object.fromEntries(
+      Object.entries(drafts).map(([k, d]) => [k, { ...d, items: d.items.map((it) => (r.out.get(it.id) ? { ...it, ...r.out.get(it.id) } : it)) }]),
+    )
+    onChange({ ...state, drafts: next })
+    setBulk(r.out.size ? 'done' : 'idle')
+    if (r.failed) setBulkError(`${r.error ?? 'IA indisponível agora.'} ${r.failed} pergunta(s) ficaram sem resposta escrita — tente de novo ou escreva no editor.`)
   }
 
   const activeDraft = activeId ? drafts[activeId] : null
@@ -158,8 +182,13 @@ export function ReviewBoard({
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
           {perguntasSemAlt > 0 && (
-            <Button size="sm" variant="gold" disabled={bulk === 'running'} onClick={generateAllDistractors}>
+            <Button size="sm" variant="gold" disabled={bulk.startsWith('running')} onClick={generateAllDistractors}>
               <Sparkles size={14} /> {bulk === 'running' ? 'Gerando…' : `Gerar múltipla escolha p/ ${perguntasSemAlt} perguntas`} {ai.demo && <DemoTag />}
+            </Button>
+          )}
+          {perguntasSemEscrita > 0 && (
+            <Button size="sm" variant="gold" disabled={bulk.startsWith('running')} onClick={() => void generateAllWritten()}>
+              <PenLine size={14} /> {bulk === 'running-written' ? 'Gerando…' : `Gerar discursiva p/ ${perguntasSemEscrita} perguntas`} {writtenAi.demo && <DemoTag />}
             </Button>
           )}
           {cards.length > 6 && cards.length > total / 3 && (

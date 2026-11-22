@@ -1,4 +1,4 @@
-import type { Distractors, StructuredBatch } from './schemas'
+import type { Distractors, StructuredBatch, WrittenAnswers } from './schemas'
 
 /**
  * Checagens semânticas de qualidade (camada além do schema).
@@ -47,6 +47,18 @@ export function checkGrounding(batch: StructuredBatch, sourceById: Record<string
 }
 
 const BANNED = /(todas as (alternativas )?anteriores|nenhuma das (alternativas )?anteriores|todas est[aã]o corretas)/i
+
+/** "alternativa C", "letra (B)", "opção E" — letra MAIÚSCULA, para não pegar "alternativa e a conduta…". */
+const CITES_LETTER = /\b([Aa]lternativa|[Ll]etra|[Oo]p[cç][aã]o)\s+["“(]?[A-E]\b/
+
+/** Objetiva → discursiva: a resposta escrita não pode depender das alternativas ("letra C"). */
+export function checkWrittenAnswers(w: WrittenAnswers, ids: string[]): string | null {
+  const got = new Set(w.itens.map((it) => it.id))
+  const missing = ids.filter((id) => !got.has(id))
+  if (missing.length) return `Faltou responder os itens: ${missing.join(', ')}.`
+  for (const it of w.itens) if (CITES_LETTER.test(it.resposta_esperada)) return `Item ${it.id}: não cite letras de alternativas; escreva o conteúdo da resposta.`
+  return null
+}
 
 export function checkDistractors(d: Distractors): string | null {
   for (const it of d.itens) {

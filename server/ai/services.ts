@@ -4,9 +4,9 @@ import { wrapUntrusted } from '../../shared/guardrails'
 import { db, schema } from '../db/client'
 import { callStructured } from './client'
 import { PROMPT_VERSION } from './models'
-import { DISTRACTORS_SYSTEM, EXPLAIN_SYSTEM, GRADE_SYSTEM } from './prompts'
-import { checkDistractors, overlap } from './quality'
-import { distractorsSchema, explanationSchema, gradeSchema, type Explanation } from './schemas'
+import { ANSWERS_SYSTEM, DISTRACTORS_SYSTEM, EXPLAIN_SYSTEM, GRADE_SYSTEM } from './prompts'
+import { checkDistractors, checkWrittenAnswers, overlap } from './quality'
+import { distractorsSchema, explanationSchema, gradeSchema, writtenAnswersSchema, type Explanation } from './schemas'
 
 /**
  * Serviços de IA "por questão" usados no simulado (dica/explicação/correção).
@@ -110,4 +110,38 @@ export async function generateDistractors(items: DistractorInput[], userId: stri
   return r.value.itens
     .filter((it) => byId.has(it.id))
     .map((it) => ({ id: it.id, correct: byId.get(it.id)!.correct ?? it.correta, incorrect: it.incorretas.map((x) => ({ text: x.texto, explanation: x.explicacao })) }))
+}
+
+export interface WrittenAnswerInput {
+  id: string
+  stem: string
+  prompt?: string
+  alternatives: { text: string; correct: boolean; explanation?: string }[]
+}
+
+/**
+ * Objetiva → discursiva (spec 002 › FR-R8): resposta escrita + pontos de acerto a partir da alternativa
+ * correta e do comentário do autor, até 6 perguntas por chamada (= 1 requisição da cota).
+ */
+export async function generateWrittenAnswers(items: WrittenAnswerInput[], userId: string) {
+  const nonce = randomUUID().slice(0, 8)
+  const r = await callStructured({
+    task: 'answers',
+    userId,
+    schema: writtenAnswersSchema,
+    system: ANSWERS_SYSTEM(nonce),
+    prompt: wrapUntrusted(
+      items
+        .map(
+          (it) =>
+            `id: ${it.id}\nENUNCIADO: ${it.stem.slice(0, 1500)}\nPERGUNTA: ${it.prompt || '(o próprio enunciado)'}\n` +
+            it.alternatives.map((a, i) => `ALTERNATIVA ${i + 1}${a.correct ? ' [GABARITO]' : ''}: ${a.text}${a.explanation ? ` (comentário do autor: ${a.explanation})` : ''}`).join('\n'),
+        )
+        .join('\n---\n'),
+      nonce,
+    ),
+    quality: (v) => checkWrittenAnswers(v, items.map((i) => i.id)),
+  })
+  const ids = new Set(items.map((i) => i.id))
+  return r.value.itens.filter((it) => ids.has(it.id)).map((it) => ({ id: it.id, expectedAnswer: it.resposta_esperada, keyPoints: it.pontos_chave }))
 }

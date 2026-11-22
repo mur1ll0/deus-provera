@@ -4,7 +4,7 @@ import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { inspectText } from '../../shared/guardrails'
 import { AiQuotaExhaustedError, AiUnavailableError } from '../ai/client'
-import { generateDistractors } from '../ai/services'
+import { generateDistractors, generateWrittenAnswers } from '../ai/services'
 import { requireUser, reserveAiRequest, type AppEnv } from '../middleware'
 
 /**
@@ -30,6 +30,29 @@ const distractorsInput = z.object({
     .max(6, 'No máximo 6 perguntas por vez.'),
 })
 
+/** Objetiva → discursiva (FR-R8): banco de questões e revisão da importação; até 6 perguntas por chamada = 1 requisição. */
+const writtenAnswersInput = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64),
+        stem: text(8_000),
+        prompt: text(4_000).optional(),
+        alternatives: z
+          .array(z.object({ text: text(1_500), correct: z.boolean(), explanation: text(2_000).optional() }))
+          .min(2)
+          .max(8)
+          .refine((a) => a.filter((x) => x.correct).length === 1, 'Cada pergunta precisa de exatamente 1 alternativa correta.'),
+      }),
+    )
+    .min(1)
+    .max(6, 'No máximo 6 perguntas por vez.'),
+})
+
+const badRequest = (r: { success: boolean; error?: { issues: { message: string }[] } }) => {
+  if (!r.success) throw new HTTPException(400, { message: r.error?.issues[0]?.message ?? 'Dados inválidos.' })
+}
+
 export const aiRoutes = new Hono<AppEnv>()
   .use(requireUser)
   .post(
@@ -49,5 +72,16 @@ export const aiRoutes = new Hono<AppEnv>()
       }
     },
   )
+  .post('/answers', zValidator('json', writtenAnswersInput, badRequest), async (c) => {
+    const user = c.get('user')!
+    await reserveAiRequest(user.id)
+    try {
+      return c.json({ items: await generateWrittenAnswers(c.req.valid('json').items, user.id) })
+    } catch (err) {
+      if (err instanceof AiQuotaExhaustedError) throw new HTTPException(429, { message: `${err.message} Você também pode escrever as respostas no editor.` })
+      if (err instanceof AiUnavailableError) throw new HTTPException(503, { message: 'IA indisponível agora. Escreva as respostas ou tente de novo em instantes.' })
+      throw err
+    }
+  })
 
 export type AiRoutes = typeof aiRoutes

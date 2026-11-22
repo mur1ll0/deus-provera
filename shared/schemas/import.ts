@@ -81,7 +81,25 @@ export const importItemSchema = z
     }
   })
 
-export const importQuestionSchema = z
+/** Enunciado "de enfeite" que conta como vazio: "", ".", "—", "QUESTÃO 3", "3)". */
+const isBlankStem = (s: unknown) => typeof s !== 'string' || /^[\s.\-–—:;,_*#]*$/u.test(s) || /^(quest[aã]o|caso)?\s*\d*[).:\-–—]*$/iu.test(s.trim())
+
+/**
+ * Enunciado nunca fica vazio (mesma regra do prompt do agente externo): com UMA pergunta, o texto
+ * dela sobe para o enunciado; com várias, vira "Responda às perguntas a seguir sobre <assunto>."
+ */
+export function fillBlankStem(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+  const q = raw as { enunciado?: unknown; perguntas?: unknown; assunto?: unknown; rotulo?: unknown }
+  if (!isBlankStem(q.enunciado) || !Array.isArray(q.perguntas) || !q.perguntas.length) return raw
+  const items = q.perguntas as { texto?: unknown }[]
+  const first = typeof items[0]?.texto === 'string' ? items[0].texto.trim() : ''
+  if (items.length === 1 && first) return { ...q, enunciado: first, perguntas: [{ ...items[0], texto: '' }] }
+  const topic = typeof q.assunto === 'string' && q.assunto.trim() ? ` sobre ${q.assunto.trim()}` : ''
+  return { ...q, enunciado: `Responda às perguntas a seguir${topic}.` }
+}
+
+const questionObjectSchema = z
   .object({
     area: trimmed(LIMITS.taxonomy).describe('Ex.: Medicina, Matemática, Psicologia'),
     disciplina: trimmed(LIMITS.taxonomy).describe('Ex.: Ginecologia, Cálculo'),
@@ -101,6 +119,8 @@ export const importQuestionSchema = z
       ctx.addIssue({ code: 'custom', path: ['perguntas'], message: 'Com mais de uma pergunta, todas precisam de texto.' })
     }
   })
+
+export const importQuestionSchema = z.preprocess(fillBlankStem, questionObjectSchema)
 
 export const importFileSchema = z.object({
   versao: z.literal(IMPORT_FORMAT_VERSION, { error: 'Use "versao": "2.0" (formato com enunciado + perguntas). Copie o prompt atualizado.' }),

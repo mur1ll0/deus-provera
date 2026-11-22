@@ -14,6 +14,12 @@ ESTRUTURA DE UMA QUESTÃO
 Uma questão tem um ENUNCIADO (caso clínico, texto-base ou comando principal) e UMA OU MAIS PERGUNTAS.
 - Questão com subitens (a, b, c… ou 1, 2, 3…): o texto comum vai em "enunciado" e cada subitem vira um item em "perguntas", com a SUA resposta.
 - Questão sem subitens: o texto inteiro (inclusive o comando, ex.: "Qual a conduta?") vai em "enunciado" e "perguntas" tem um único item com "texto": "".
+- O "enunciado" NUNCA pode ficar vazio. Antes de transcrever, veja como a questão está montada no documento e escolha o caso:
+  1) Há texto antes dos subitens (caso, texto-base, comando como "Responda:"): ele é o enunciado.
+  2) Só há UMA pergunta (sem texto comum): o texto dessa pergunta vai para o "enunciado" e a pergunta fica com "texto": "".
+  3) Há vários subitens e nenhum texto comum (ex.: "QUESTÃO 3 — a) Defina… b) Cite…"): use como enunciado o título ou tema da questão que o documento mostrar (ex.: "Sobre diabetes mellitus gestacional, responda:"); se não houver nenhum, escreva um enunciado curto e neutro no formato "Responda às perguntas a seguir sobre <assunto>." Os subitens continuam em "perguntas", cada um com o seu texto.
+  4) O que é comum às perguntas está numa imagem, tabela ou gráfico: transcreva-o no enunciado (regra 7).
+  Não repita o texto de uma pergunta no enunciado (exceto no caso 2, em que ela sai de "perguntas") e não use enunciados vazios ou de enfeite (".", "—", "Questão 3").
 
 INFORMAÇÕES DO MATERIAL SOBRE AS QUESTÕES (leia antes de transcrever)
 Muitos PDFs trazem, fora das questões, informações sobre como elas estão organizadas: título do material, sumário/índice, tabela "Questões × Temas", títulos de unidade/capítulo/seção, avisos como "Use o texto a seguir para responder às questões 5 a 7", gabarito em outra página, ou uma seção "Como usar este material". Procure-as no PDF INTEIRO (costumam estar nas primeiras páginas ou no fim) e USE-AS:

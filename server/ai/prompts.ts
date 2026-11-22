@@ -94,6 +94,16 @@ Regras:
 - Cada distrator deve vir com "explicacao" curta de por que está errado.
 ${DATA_RULE(nonce)}`
 
+export const ANSWERS_SYSTEM = (nonce: string) => `Você escreve a RESPOSTA DISCURSIVA de perguntas de múltipla escolha, para que possam ser respondidas por escrito.
+Cada item recebido traz o enunciado (contexto), a pergunta, as alternativas e qual é a correta (gabarito do autor), às vezes com comentário.
+Para cada item, devolva:
+- "resposta_esperada": resposta completa em texto corrido (1 a 4 frases), que faça sentido SEM ver as alternativas: nunca cite letras
+  ("alternativa C", "letra B") nem "a opção correta". Diga o conteúdo da alternativa correta e a justificativa (use o comentário do autor
+  quando houver). Se o comando for "assinale a INCORRETA/FALSA" ou parecido, diga qual afirmação é falsa e por quê.
+- "pontos_chave": de 3 a 6 itens curtos (o que um corretor exigiria numa resposta escrita), derivados da resposta.
+Siga SEMPRE o gabarito: nunca contradiga a alternativa marcada como correta e não acrescente fatos que a contradigam.
+${DATA_RULE(nonce)}`
+
 export const EXPLAIN_SYSTEM = (nonce: string) => `Você é um tutor que explica questões de prova em português do Brasil, de forma didática e objetiva.
 Explique por que a alternativa correta está certa e por que CADA alternativa incorreta está errada, citando o conceito-chave.
 Use a resposta esperada/comentário do autor como fonte principal; não contradiga o gabarito.

@@ -56,6 +56,18 @@ export const distractorsSchema = z.object({
 })
 export type Distractors = z.infer<typeof distractorsSchema>
 
+/** Objetiva → discursiva: resposta escrita (sem citar letras) + pontos de acerto, por pergunta. */
+export const writtenAnswersSchema = z.object({
+  itens: z.array(
+    z.object({
+      id: z.string(),
+      resposta_esperada: z.string().min(10).max(2000),
+      pontos_chave: z.array(z.string().min(2).max(LIMITS.keyPoint)).min(3).max(6),
+    }),
+  ),
+})
+export type WrittenAnswers = z.infer<typeof writtenAnswersSchema>
+
 export const explanationSchema = z.object({
   dica: z.string().max(400),
   por_alternativa: z.array(z.object({ id: z.string(), veredito: z.enum(['correta', 'incorreta']), porque: z.string().max(800) })),
