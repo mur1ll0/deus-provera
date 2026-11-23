@@ -1,8 +1,10 @@
+import type { LinkReport } from '@shared/answer-key'
 import type { DocumentGuide } from '@shared/document-guide'
 import type { ImportFile, ImportQuestion } from '@shared/schemas/import'
 import { apiFetch } from '@/lib/api'
 import type { PageImageCrop } from './pageImages'
 import type { ExtractedPdf } from './pdfExtract'
+import { documentsOf } from './pdfSet'
 
 /**
  * Importação de PDF pela API real (spec 002 T031 + T060), sem React — o hook `useImportJob` só guarda o estado.
@@ -47,6 +49,8 @@ export interface ImportJobView {
   drafts?: Record<string, ServerDraft>
   /** Guia do documento (instruções, temas por questão) lido no servidor — só em `revisao`. */
   guide?: DocumentGuide
+  /** Questões × gabarito (PDFs separados ou gabarito no fim) — só em `revisao`. */
+  link?: LinkReport | null
   /** Job de agente externo: o JSON v2 validado (a revisão é montada no cliente). */
   payload?: ImportFile | null
   /** Revisão salva automaticamente (T042): cards + rascunhos já editados. */
@@ -111,8 +115,11 @@ export function batchPageImages(crops: PageImageCrop[]): PageImageCrop[][] {
   return out
 }
 
-/** Payload de criação do job (`POST /api/imports`, source "pdf_ia"): texto com marcadores + manifesto das imagens. */
-export function pdfJobPayload(pdf: Pick<ExtractedPdf, 'fileName' | 'pages'>, opts: { generateDistractors?: boolean; vision?: boolean } = {}) {
+/**
+ * Payload de criação do job (`POST /api/imports`, source "pdf_ia"): texto com marcadores + manifesto das imagens.
+ * Vários PDFs (questões + gabarito): páginas já na numeração global + `documents` com o papel de cada arquivo.
+ */
+export function pdfJobPayload(pdf: Pick<ExtractedPdf, 'fileName' | 'pages' | 'parts'>, opts: { generateDistractors?: boolean; vision?: boolean } = {}) {
   const vision = opts.vision !== false
   return {
     source: 'pdf_ia' as const,
@@ -120,6 +127,7 @@ export function pdfJobPayload(pdf: Pick<ExtractedPdf, 'fileName' | 'pages'>, opt
     generateDistractors: !!opts.generateDistractors,
     pages: pdf.pages.map((p) => ({ page: p.page, text: (vision ? p.markedText : p.text).slice(0, 60_000) })),
     images: vision ? pdf.pages.flatMap((p) => p.imageRegions.map((r) => ({ id: r.id, page: p.page }))) : [],
+    ...(pdf.parts && (pdf.parts.length > 1 || pdf.parts[0]?.role !== 'misto') ? { documents: documentsOf(pdf.parts) } : {}),
   }
 }
 

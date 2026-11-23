@@ -7,6 +7,7 @@ import { Badge, Button, DemoTag, Modal } from '@/components/ui'
 import { RichText } from '@/components/RichText'
 import { runAiBatches, useDistractors, useWrittenAnswers } from '@/lib/ai'
 import { LETTERS } from '@/lib/format'
+import { itemLabelText } from '@shared/item-label'
 import type { DraftQuestion } from '@/mocks/model'
 import { QuestionEditor } from './QuestionEditor'
 
@@ -270,7 +271,7 @@ function GeneratedItem({ item, kind, multi }: { item: QuestionItem; kind: Missin
     <div className="rounded-xl border border-line bg-slate-50/70 p-2.5 text-sm">
       {multi && (
         <p className="mb-1 text-xs">
-          <b>{item.label})</b> {item.prompt}
+          <b>{itemLabelText(item.label)}</b> {item.prompt}
         </p>
       )}
       {kind === 'multipla' ? (

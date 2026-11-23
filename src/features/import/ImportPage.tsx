@@ -1,13 +1,13 @@
 import clsx from 'clsx'
-import { Bot, CheckCircle2, ClipboardCopy, FileText, FileUp, ImageIcon, Loader2, PencilLine, PartyPopper, ShieldAlert, Timer, Trash2, UploadCloud } from 'lucide-react'
+import { Bot, CheckCircle2, ClipboardCopy, FilePlus2, FileText, FileUp, ImageIcon, Link2, Loader2, PencilLine, PartyPopper, ShieldAlert, Timer, Trash2, UploadCloud } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Link } from 'react-router'
+import { DOCUMENT_ROLES, linkSummary, segmentImport, type DocumentRole, type LinkReport } from '@shared/answer-key'
 import type { Visibility } from '@shared/domain'
 import { inspectText } from '@shared/guardrails'
 import { EXTERNAL_AGENT_PROMPT } from '@shared/prompts/external-agent'
 import { parseImportText, type ImportValidationResult } from '@shared/schemas/import'
-import { segmentQuestions } from '@shared/segmenter'
 import { Badge, Button, Card, DemoTag, Field, inputClass, PageHeader } from '@/components/ui'
 import { PIPELINE_STEPS, runMockPipeline } from '@/mocks/ai'
 import { useStore } from '@/mocks/store'
@@ -21,6 +21,7 @@ import { batchPageImages, type ImportJobView } from './importJob'
 import { JobProgressCard } from './JobProgress'
 import type { PageImageCrop } from './pageImages'
 import type { ExtractedPdf } from './pdfExtract'
+import { documentsOf, MAX_PDFS, mergePdfs, setProblem, suggestRoles } from './pdfSet'
 import { ReviewBoard } from './ReviewBoard'
 import { useImportJob } from './useImportJob'
 
@@ -28,7 +29,7 @@ type Method = 'pdf' | 'agente' | 'manual'
 type Step = 'entrada' | 'processando' | 'revisao' | 'concluido'
 
 const METHODS: { id: Method; icon: typeof FileUp; title: string; text: string; badge: string }[] = [
-  { id: 'pdf', icon: FileUp, title: 'PDF com IA', text: 'Envie o PDF: o texto é extraído no seu navegador e a IA separa, categoriza e completa as questões.', badge: 'Automático' },
+  { id: 'pdf', icon: FileUp, title: 'PDF com IA', text: 'Envie o PDF (ou o de questões + o de gabarito): o texto é extraído no seu navegador e a IA separa, categoriza e completa as questões.', badge: 'Automático' },
   { id: 'agente', icon: Bot, title: 'Usar meu agente de IA', text: 'Copie nosso prompt, use no ChatGPT/Claude/Gemini com o PDF e cole aqui o JSON gerado.', badge: 'Melhor p/ imagens' },
   { id: 'manual', icon: PencilLine, title: 'Cadastrar manualmente', text: 'Digite enunciado, alternativas e resposta. A IA pode gerar as alternativas incorretas.', badge: 'Controle total' },
 ]
@@ -105,7 +106,11 @@ export function ImportPage() {
   }
 
   async function processPdf(pdf: ExtractedPdf, opts: { vision: boolean }) {
-    if (!real) return process(() => draftsFromSegments(segmentQuestions(pdf.fullText), visibility, pdf.fileName))
+    if (!real) {
+      const docs = pdf.parts && (pdf.parts.length > 1 || pdf.parts[0].role !== 'misto') ? documentsOf(pdf.parts) : undefined
+      const seg = segmentImport(pdf.fullText, docs)
+      return process(() => draftsFromSegments(seg.questions, visibility, pdf.fileName, seg.link))
+    }
     setJobVision(opts.vision && pdf.pages.some((p) => p.imageRegions.length))
     setStep('processando')
     openJobReview(await job.start(pdf, opts), pdf.fileName)
@@ -390,62 +395,104 @@ function Stepper({ step }: { step: Step }) {
 
 /* ------------------------------ PDF ------------------------------ */
 
+interface PdfFile {
+  pdf: ExtractedPdf
+  role: DocumentRole
+  /** O usuário escolheu o papel (não é mais sugerido automaticamente). */
+  touched: boolean
+}
+
 function PdfPanel({ real, onProcess }: { real: boolean; onProcess: (pdf: ExtractedPdf, opts: { vision: boolean }) => void }) {
   const input = useRef<HTMLInputElement>(null)
-  const [pdf, setPdf] = useState<ExtractedPdf | null>(null)
+  const [files, setFiles] = useState<PdfFile[]>([])
   const [vision, setVision] = useState(true)
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [progress, setProgress] = useState<{ name: string; done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [showText, setShowText] = useState(false)
 
-  async function handle(file: File | undefined) {
-    if (!file) return
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) return setError('Envie um arquivo .pdf')
-    if (file.size > 30 * 1024 * 1024) return setError('Arquivo maior que 30 MB. Divida o PDF em partes.')
+  /** Papéis sugeridos para quem o usuário ainda não mexeu (1 arquivo: "misto"; 2+: lidos do conteúdo). */
+  function withSuggestedRoles(list: PdfFile[]): PdfFile[] {
+    const suggested = suggestRoles(list.map((f) => f.pdf))
+    return list.map((f, i) => (f.touched ? f : { ...f, role: suggested[i].role }))
+  }
+
+  async function handle(picked: File[]) {
+    if (!picked.length) return
+    const bad = picked.find((f) => f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf'))
+    if (bad) return setError(`"${bad.name}" não é um arquivo .pdf`)
+    const big = picked.find((f) => f.size > 30 * 1024 * 1024)
+    if (big) return setError(`"${big.name}" tem mais de 30 MB. Divida o PDF em partes.`)
+    if (files.length + picked.length > MAX_PDFS) return setError(`Envie no máximo ${MAX_PDFS} PDFs por importação.`)
     setError(null)
-    setPdf(null)
-    setProgress({ done: 0, total: 1 })
+    const out: PdfFile[] = []
     try {
       // pdf.js (~1 MB) só é baixado quando o usuário escolhe um arquivo
       const { extractPdf } = await import('./pdfExtract')
-      setPdf(await extractPdf(file, (done, total) => setProgress({ done, total })))
+      for (const file of picked) {
+        setProgress({ name: file.name, done: 0, total: 1 })
+        out.push({ pdf: await extractPdf(file, (done, total) => setProgress({ name: file.name, done, total })), role: 'misto', touched: false })
+      }
     } catch (e) {
       setError(`Não foi possível ler o PDF: ${(e as Error).message}`)
     } finally {
       setProgress(null)
     }
+    if (out.length) setFiles((cur) => withSuggestedRoles([...cur, ...out]))
   }
 
-  const segments = pdf ? segmentQuestions(pdf.fullText) : []
+  const setRole = (i: number, role: DocumentRole) => setFiles((cur) => cur.map((f, k) => (k === i ? { ...f, role, touched: true } : f)))
+  const remove = (i: number) => setFiles((cur) => withSuggestedRoles(cur.filter((_, k) => k !== i)))
+
+  const pdf = useMemo(() => (files.length ? mergePdfs(files.map((f) => ({ pdf: f.pdf, role: f.role }))) : null), [files])
+  // Mesma segmentação do servidor (nó `segment`): questões, perguntas e respostas ligadas do gabarito
+  const analysis = useMemo(() => (pdf ? segmentImport(pdf.fullText, pdf.parts && (pdf.parts.length > 1 || pdf.parts[0].role !== 'misto') ? documentsOf(pdf.parts) : undefined) : null), [pdf])
+  const segments = analysis?.questions ?? []
+  const link = analysis?.link ?? null
   const imagePages = pdf?.pages.filter((p) => p.images > 0) ?? []
   const ocrPages = pdf?.pages.filter((p) => p.needsOcr) ?? []
   const usefulImages = pdf?.pages.reduce((a, p) => a + p.imageRegions.length, 0) ?? 0
-  const guard = pdf ? inspectText(pdf.fullText) : null
+  const guard = useMemo(() => (pdf ? inspectText(pdf.fullText) : null), [pdf])
+  const problem = pdf?.parts ? setProblem(pdf.parts) : null
+  const answered = segments.reduce((a, s) => a + s.items.filter((i) => i.answer || i.choices).length, 0)
+
+  const dropProps = {
+    onDragOver: (e: DragEvent) => {
+      e.preventDefault()
+      setDragOver(true)
+    },
+    onDragLeave: () => setDragOver(false),
+    onDrop: (e: DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      void handle([...e.dataTransfer.files])
+    },
+  }
+  const fileInput = (
+    <input
+      ref={input}
+      type="file"
+      accept="application/pdf,.pdf"
+      multiple
+      hidden
+      onChange={(e) => {
+        void handle([...(e.target.files ?? [])])
+        e.target.value = ''
+      }}
+    />
+  )
 
   return (
     <Card className="p-5 sm:p-6">
       {!pdf && (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDragOver(true)
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setDragOver(false)
-            handle(e.dataTransfer.files[0])
-          }}
-          className={clsx('flex flex-col items-center rounded-2xl border-2 border-dashed px-6 py-12 text-center transition', dragOver ? 'border-brand-500 bg-brand-50' : 'border-brand-200')}
-        >
+        <div {...dropProps} className={clsx('flex flex-col items-center rounded-2xl border-2 border-dashed px-6 py-12 text-center transition', dragOver ? 'border-brand-500 bg-brand-50' : 'border-brand-200')}>
           {progress ? (
             <>
               <Loader2 className="animate-spin text-brand-600" size={36} />
               <p className="mt-3 font-display font-bold">
                 Lendo página {progress.done} de {progress.total}…
               </p>
-              <p className="text-xs text-muted">A extração acontece no seu navegador — o PDF não é enviado.</p>
+              <p className="max-w-full truncate text-xs text-muted">{progress.name} · a extração acontece no seu navegador — o PDF não é enviado.</p>
             </>
           ) : (
             <>
@@ -453,39 +500,76 @@ function PdfPanel({ real, onProcess }: { real: boolean; onProcess: (pdf: Extract
               <p className="mt-3 font-display font-bold">Arraste o PDF aqui</p>
               <p className="text-sm text-muted">ou</p>
               <Button className="mt-2" onClick={() => input.current?.click()}>
-                <FileUp size={16} /> Escolher arquivo
+                <FileUp size={16} /> Escolher arquivo(s)
               </Button>
-              <p className="mt-4 max-w-md text-xs text-muted">Teste com os PDFs de exemplo (Unidade II / III UNIDADE). Até 30 MB.</p>
+              <p className="mt-4 max-w-md text-xs text-muted">
+                Questões e gabarito em arquivos separados? Envie os dois juntos (até {MAX_PDFS} PDFs, 30 MB cada) — as respostas são ligadas às questões pelo número.
+              </p>
             </>
           )}
-          <input ref={input} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => handle(e.target.files?.[0])} />
+          {fileInput}
         </div>
       )}
       {error && <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</p>}
 
       {pdf && (
         <div className="space-y-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="rounded-xl bg-brand-50 p-2.5 text-brand-600">
-              <FileText size={20} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-display font-bold">{pdf.fileName}</p>
-              <p className="text-xs text-muted">
-                {(pdf.sizeBytes / 1024 / 1024).toFixed(1)} MB · {pdf.pages.length} páginas · {pdf.pages.reduce((a, p) => a + p.chars, 0).toLocaleString('pt-BR')} caracteres
-              </p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setPdf(null)}>
-              <Trash2 size={14} /> Trocar arquivo
-            </Button>
-          </div>
+          <ul className="space-y-2" aria-label="Arquivos da importação">
+            {files.map((f, i) => {
+              const part = pdf.parts?.[i]
+              return (
+                <li key={`${f.pdf.fileName}-${i}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-line p-3">
+                  <span className="rounded-xl bg-brand-50 p-2.5 text-brand-600">
+                    <FileText size={20} />
+                  </span>
+                  <div className="min-w-0 flex-1 basis-40">
+                    <p className="truncate font-display font-bold">{f.pdf.fileName}</p>
+                    <p className="text-xs text-muted">
+                      {(f.pdf.sizeBytes / 1024 / 1024).toFixed(1)} MB · {f.pdf.pages.length} páginas{files.length > 1 && part ? ` (pág. ${part.firstPage}–${part.firstPage + part.pageCount - 1} da importação)` : ''}
+                    </p>
+                  </div>
+                  <label className="flex min-w-0 basis-full flex-col gap-1 text-xs font-bold text-muted sm:basis-56">
+                    O que tem neste arquivo
+                    <select className={inputClass} value={f.role} onChange={(e) => setRole(i, e.target.value as DocumentRole)}>
+                      {DOCUMENT_ROLES.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                    {files.length > 1 && part && !f.touched && <span className="font-normal">Sugerido pela leitura: {part.detected.reason}.</span>}
+                  </label>
+                  <Button variant="ghost" size="sm" onClick={() => remove(i)} aria-label={`Remover ${f.pdf.fileName}`}>
+                    <Trash2 size={14} /> Remover
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+          {progress ? (
+            <p className="flex items-center gap-2 text-sm text-muted">
+              <Loader2 className="animate-spin" size={14} /> Lendo {progress.name}: página {progress.done} de {progress.total}…
+            </p>
+          ) : (
+            files.length < MAX_PDFS && (
+              <div {...dropProps} className={clsx('flex flex-wrap items-center gap-3 rounded-xl border-2 border-dashed p-3 text-sm', dragOver ? 'border-brand-500 bg-brand-50' : 'border-line')}>
+                <Button variant="ghost" size="sm" onClick={() => input.current?.click()}>
+                  <FilePlus2 size={14} /> Adicionar outro PDF
+                </Button>
+                <span className="text-xs text-muted">ex.: o gabarito, se as respostas estão em outro arquivo</span>
+                {fileInput}
+              </div>
+            )
+          )}
 
           <div className="grid gap-3 sm:grid-cols-4">
             <Stat label="Questões (enunciados)" value={segments.length} tone="brand" />
             <Stat label="Perguntas" value={segments.reduce((a, s) => a + s.items.length, 0)} tone="brand" />
-            <Stat label="Perguntas com resposta" value={segments.reduce((a, s) => a + s.items.filter((i) => i.answer).length, 0)} tone="green" />
+            <Stat label="Perguntas com resposta" value={answered} tone="green" />
             <Stat label="Páginas com imagens" value={imagePages.length} tone="blue" />
           </div>
+
+          {link && <LinkPreview link={link} sectionPage={analysis?.answerSectionPage} />}
 
           {imagePages.length > 0 && (
             <div className="flex gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
@@ -528,18 +612,57 @@ function PdfPanel({ real, onProcess }: { real: boolean; onProcess: (pdf: Extract
             )}
           </div>
 
+          {problem && <p className="rounded-xl bg-gold-50 p-3 text-sm font-bold text-gold-600">{problem}</p>}
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-line pt-4">
             <span className="text-xs text-muted">
               Estimativa: ~{Math.max(1, Math.ceil(segments.length / 3))} chamadas de IA (lotes de 3 questões)
               {usefulImages > 0 && vision && <> + {Math.ceil(usefulImages / 3)} de visão (lotes de 3 imagens)</>} {!real && <DemoTag />}
             </span>
-            <Button size="lg" disabled={!segments.length} onClick={() => onProcess(pdf, { vision: vision && usefulImages > 0 })}>
+            <Button size="lg" disabled={!segments.length || !!problem || !!progress} onClick={() => onProcess(pdf, { vision: vision && usefulImages > 0 })}>
               Processar com IA →
             </Button>
           </div>
         </div>
       )}
     </Card>
+  )
+}
+
+/** Resumo da ligação questões × gabarito, antes de processar (o mesmo cálculo do servidor). */
+function LinkPreview({ link, sectionPage }: { link: LinkReport; sectionPage?: number }) {
+  const ok = link.entries > 0 && link.linkedQuestions === link.questions && !link.orphanEntries.length
+  const tone = !link.entries ? 'border-rose-200 bg-rose-50 text-rose-900' : ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-gold-300 bg-gold-50 text-slate-800'
+  return (
+    <div role="status" className={clsx('rounded-xl border p-3 text-sm', tone)}>
+      <p className="flex items-start gap-2">
+        <Link2 size={18} className="mt-0.5 shrink-0" />
+        <span>
+          {sectionPage ? <>Gabarito encontrado no fim do arquivo (pág. {sectionPage}). </> : null}
+          {linkSummary(link)}
+          {link.entries > 0 && !ok && <> Questões sem resposta ficam marcadas na revisão; a IA tenta ligar as que sobraram.</>}
+        </span>
+      </p>
+      {(link.unmatchedQuestions.length > 0 || link.orphanEntries.length > 0) && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs font-bold">Ver o que não foi ligado</summary>
+          {link.unmatchedQuestions.length > 0 && (
+            <p className="mt-2 break-words text-xs">
+              <b>Questões sem resposta ({link.unmatchedQuestions.length}):</b> {link.unmatchedQuestions.map((q) => q.label ?? `p. ${q.page ?? '?'}`).join(', ')}
+            </p>
+          )}
+          {link.orphanEntries.length > 0 && (
+            <ul className="mt-2 space-y-1 text-xs">
+              <li className="font-bold">Respostas sem questão ({link.orphanEntries.length}):</li>
+              {link.orphanEntries.slice(0, 20).map((o) => (
+                <li key={o.id} className="break-words">
+                  <span className="font-mono">{o.label ?? o.id}</span> {o.preview}
+                </li>
+              ))}
+            </ul>
+          )}
+        </details>
+      )}
+    </div>
   )
 }
 
@@ -634,7 +757,7 @@ function AgentPanel({ onImport }: { onImport: (r: ImportValidationResult) => voi
         <h3 className="font-bold">1. Copie o prompt</h3>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted">
           <li>Abra o agente de IA que preferir (ChatGPT, Claude, Gemini…).</li>
-          <li>Anexe o PDF e cole o prompt abaixo.</li>
+          <li>Anexe o PDF (ou os PDFs de questões e de gabarito, juntos) e cole o prompt abaixo.</li>
           <li>Copie o bloco JSON da resposta e cole ao lado.</li>
         </ol>
         <pre className="scrollbar-thin mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100">{EXTERNAL_AGENT_PROMPT}</pre>

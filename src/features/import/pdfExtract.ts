@@ -2,6 +2,7 @@ import { getDocument, GlobalWorkerOptions, OPS } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { composePageText, findImageRects, imageId, usefulImageRects, type ImageRect, type TextRun } from '@shared/page-images'
 import { popqLayoutToLine } from '@shared/tables'
+import type { DocumentRole } from '@shared/answer-key'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -38,6 +39,23 @@ export interface ExtractedPdf {
   pages: ExtractedPage[]
   fullText: string
   /** O arquivo original, para renderizar os recortes de imagem depois (nunca é enviado). */
+  file: File
+  /**
+   * Vários PDFs na mesma importação (questões + gabarito — spec 002 US6): páginas na numeração global,
+   * contínua entre os arquivos, e o papel de cada arquivo. Montado por `mergePdfs` (pdfSet.ts).
+   */
+  parts?: PdfPart[]
+}
+
+export interface PdfPart {
+  fileName: string
+  sizeBytes: number
+  role: DocumentRole
+  /** Papel sugerido pela leitura do arquivo (o usuário pode trocar). */
+  detected: { role: DocumentRole; reason: string }
+  /** 1ª página do arquivo na numeração global. */
+  firstPage: number
+  pageCount: number
   file: File
 }
 

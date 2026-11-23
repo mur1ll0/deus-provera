@@ -45,6 +45,11 @@ export const classificationSchema = z.object({
 })
 export type Classification = z.infer<typeof classificationSchema>
 
+/** Nó `link`: pares questão × resposta do gabarito (só ids — o texto é sempre o do gabarito). */
+export const linkSchema = z.object({
+  pares: z.array(z.object({ questao_id: z.string().max(20), resposta_id: z.string().max(20) })).max(100),
+})
+
 export const distractorsSchema = z.object({
   itens: z.array(
     z.object({

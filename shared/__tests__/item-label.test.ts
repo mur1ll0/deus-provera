@@ -22,3 +22,14 @@ describe('itemMarker (círculo da pergunta no simulado)', () => {
     expect(itemMarker('Anamnese', 3)).toBe('4')
   })
 })
+
+describe('itemLabelText', () => {
+  it('rótulo curto ganha parêntese; rótulo longo fica como está', async () => {
+    const { itemLabelText } = await import('../item-label')
+    expect(itemLabelText('a')).toBe('a)')
+    expect(itemLabelText('Parte 2')).toBe('Parte 2')
+    expect(itemLabelText('b)')).toBe('b)')
+    expect(itemLabelText(undefined, 1)).toBe('2)')
+    expect(itemLabelText(null)).toBe('Resposta')
+  })
+})

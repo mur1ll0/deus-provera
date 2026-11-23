@@ -13,7 +13,7 @@
  *     tudo falhar, fallback determinístico (segmentador/heurísticas) marcando "revisar".
  */
 
-export type AiTask = 'structure' | 'classify' | 'distractors' | 'answers' | 'explain' | 'grade' | 'vision' | 'guard'
+export type AiTask = 'structure' | 'classify' | 'distractors' | 'answers' | 'explain' | 'grade' | 'vision' | 'guard' | 'link'
 
 export interface TaskConfig {
   /** Cadeia em ordem de preferência. Cada elo é uma chamada; dentro dela o OpenRouter ainda aplica `models`. */
@@ -88,6 +88,14 @@ export const TASKS: Record<AiTask, TaskConfig> = {
     temperature: 0,
     maxOutputTokens: 16_000,
     timeoutMs: 150_000,
+  },
+  // Questões × gabarito sem número em comum: só escolhe pares de ids (saída pequena). Mesma cadeia da classificação.
+  link: {
+    chain: ['baidu/ernie-5.5-flash-preview:free', 'inclusionai/ling-3.2-flash:free', FREE_ROUTER],
+    structured: true,
+    temperature: 0,
+    maxOutputTokens: 6000,
+    timeoutMs: 90_000,
   },
   // Classificador de injeção (camada 2 do guardrail): rápido e barato.
   guard: {

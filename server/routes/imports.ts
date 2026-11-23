@@ -3,6 +3,7 @@ import { and, desc, eq, notInArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
+import { normalizeDocuments } from '../../shared/answer-key'
 import { IMAGE_MARK_RE } from '../../shared/page-images'
 import { importFileSchema } from '../../shared/schemas/import'
 import { commitIssues, importCommitInput } from '../../shared/schemas/import-commit'
@@ -41,6 +42,18 @@ const createSchema = z.discriminatedUnion('source', [
       .array(z.object({ id: z.string().regex(IMAGE_ID), page: z.number().int().positive() }))
       .max(300)
       .default([]),
+    // Vários PDFs (ex.: questões + gabarito): páginas na numeração global, contínua entre os arquivos (spec 002 US6).
+    documents: z
+      .array(
+        z.object({
+          name: z.string().max(200),
+          role: z.enum(['questoes', 'respostas', 'misto']),
+          firstPage: z.number().int().positive(),
+          lastPage: z.number().int().positive(),
+        }),
+      )
+      .max(10)
+      .optional(),
   }),
   z.object({ source: z.literal('agente_externo'), payload: importFileSchema }),
   // Lote digitado na tela (T048): nasce em revisão e é salvo pelo mesmo /commit.
@@ -111,10 +124,18 @@ export const importsRoutes = new Hono<AppEnv>()
     const images: Record<string, PageImageState> = {}
     for (const im of body.data.images) if (marks.has(im.id)) images[im.id] = { page: im.page, status: 'pendente' }
 
+    // Intervalos inválidos (sobrepostos/invertidos ou fora das páginas enviadas) → 400: o cliente monta errado
+    const docs = body.data.documents?.length ? normalizeDocuments(body.data.documents) : null
+    const pageSet = new Set(body.data.pages.map((p) => p.page))
+    if (body.data.documents?.length && (!docs || docs.some((d) => ![...pageSet].some((p) => p >= d.firstPage && p <= d.lastPage)))) {
+      return c.json({ error: 'Documentos com páginas inválidas (sobrepostas ou fora do texto enviado).' }, 400)
+    }
+
     const state = importGraph.initial({
       nonce: randomUUID().slice(0, 8),
       options: { generateDistractors: body.data.generateDistractors },
       rawPages: body.data.pages,
+      ...(docs ? { docs } : {}),
       images,
       blocks: [],
       pendingBatches: [],
@@ -264,6 +285,8 @@ export const importsRoutes = new Hono<AppEnv>()
       cards: job.status === 'revisao' ? s.cards : undefined,
       /** O que o documento diz sobre a organização (instruções, temas por questão) — exibido na revisão. */
       guide: job.status === 'revisao' ? s.guide : undefined,
+      /** Questões × gabarito (vários PDFs ou gabarito no fim): o que ligou e o que sobrou — exibido na revisão. */
+      link: job.status === 'revisao' ? s.link : undefined,
       drafts: job.status === 'revisao' ? s.drafts : undefined,
       payload: (job.state as { payload?: unknown }).payload,
       reviewDraft: job.status === 'revisao' ? (job.state as { reviewDraft?: unknown }).reviewDraft : undefined,

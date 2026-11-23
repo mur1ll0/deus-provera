@@ -5,9 +5,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Badge, Button, Card, DemoTag, Field, inputClass, Modal } from '@/components/ui'
 import { needsDiscursive, needsMultipleChoice } from '@shared/completeness'
 import { runAiBatches, useDistractors, useWrittenAnswers } from '@/lib/ai'
+import { itemLabelText } from '@shared/item-label'
 import { uid, type DraftQuestion, type ImportCard } from '@/mocks/model'
 import { QuestionEditor } from '@/features/questions/QuestionEditor'
 import type { ReviewProblem } from './commit'
+import { linkSummary } from '@shared/answer-key'
 import type { ReviewNotes, ReviewState } from './drafts'
 
 /**
@@ -389,13 +391,43 @@ function DraggableQuestion({
 
 /** Guia do documento (instruções e temas por questão usados na classificação) + avisos do processamento. */
 function DocumentNotes({ notes }: { notes: ReviewNotes }) {
-  const { guide, warnings } = notes
+  const { guide, warnings, link } = notes
   const quota = warnings.filter((w) => /cota/i.test(w))
   const others = warnings.filter((w) => !/cota/i.test(w))
-  const hasGuide = !!guide && (guide.topics.length > 0 || !!guide.instructions)
-  if (!hasGuide && !warnings.length) return null
+  const themes = guide?.themes ?? []
+  const hasGuide = !!guide && (guide.topics.length > 0 || !!guide.instructions || themes.length > 0)
+  if (!hasGuide && !warnings.length && !link) return null
   return (
     <div className="space-y-3">
+      {link && (
+        <details className="card p-4 text-sm" open={link.unmatchedQuestions.length > 0 || link.orphanEntries.length > 0}>
+          <summary className="flex cursor-pointer flex-wrap items-center gap-2 font-bold">
+            <ListChecks size={16} className="text-brand-600" /> Gabarito
+            <Badge tone={link.linkedQuestions === link.questions && !link.orphanEntries.length ? 'green' : 'gold'}>
+              {link.linkedQuestions} de {link.questions} questões ligadas
+            </Badge>
+          </summary>
+          <p className="mt-2 text-slate-700">{linkSummary(link)}</p>
+          {link.unmatchedQuestions.length > 0 && (
+            <p className="mt-2 break-words text-slate-700">
+              <b>Sem resposta no gabarito:</b> {link.unmatchedQuestions.map((q) => q.label ?? `p. ${q.page ?? '?'}`).join(', ')} — estão marcadas nos cards; complete no editor.
+            </p>
+          )}
+          {link.orphanEntries.length > 0 && (
+            <div className="mt-2">
+              <p className="font-bold">Respostas do gabarito sem questão ({link.orphanEntries.length}) — copie para a questão certa se precisar:</p>
+              <ul className="mt-1 space-y-1">
+                {link.orphanEntries.map((o) => (
+                  <li key={o.id} className="break-words rounded-lg bg-slate-50 p-2 text-xs text-slate-700">
+                    <span className="font-mono font-bold">{o.label ?? o.id}</span>
+                    {o.page ? <span className="text-muted"> (p. {o.page})</span> : null} {o.preview}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </details>
+      )}
       {quota.length > 0 && (
         <section role="status" className="rounded-2xl border border-gold-300 bg-gold-50 p-4 text-sm">
           <p className="flex items-center gap-2 font-bold text-gold-600">
@@ -416,9 +448,20 @@ function DocumentNotes({ notes }: { notes: ReviewNotes }) {
           <summary className="flex cursor-pointer flex-wrap items-center gap-2 font-bold">
             <BookOpen size={16} className="text-brand-600" /> Guia do documento{guide.page ? ` (pág. ${guide.page})` : ''}
             {guide.topics.length > 0 && <Badge tone="brand">{guide.topics.length} temas por questão</Badge>}
+            {themes.length > 0 && <Badge tone="brand">{themes.length} temas</Badge>}
             {guide.instructions && <Badge tone="neutral">instruções</Badge>}
           </summary>
           {guide.instructions && <p className="mt-3 whitespace-pre-line break-words text-slate-700">{guide.instructions}</p>}
+          {themes.length > 0 && (
+            <ul className="mt-3 space-y-1">
+              {themes.map((t) => (
+                <li key={t.code} className="flex gap-2 break-words">
+                  <span className="shrink-0 font-mono text-xs text-muted">{t.code}</span>
+                  <span>{t.name}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {guide.topics.length > 0 && (
             <ul className="mt-3 space-y-1">
               {guide.topics.map((t) => (
@@ -471,7 +514,7 @@ function QuestionChip({ q, dragging, handleProps, children }: { q: DraftQuestion
             <ul className="mt-1.5 space-y-0.5 border-l-2 border-brand-100 pl-2 text-xs text-muted">
               {q.items.map((it, i) => (
                 <li key={it.id} className="truncate">
-                  <b className="text-ink">{it.label ?? i + 1})</b> {it.prompt || '—'} {!it.expectedAnswer && !it.alternatives?.length && <span className="font-bold text-gold-600">· sem resposta</span>}
+                  <b className="text-ink">{itemLabelText(it.label, i)}</b> {it.prompt || '—'} {!it.expectedAnswer && !it.alternatives?.length && <span className="font-bold text-gold-600">· sem resposta</span>}
                 </li>
               ))}
             </ul>

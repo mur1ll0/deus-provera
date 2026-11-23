@@ -97,7 +97,9 @@ flowchart LR
   guard[guard<br/>regex + LLM nos trechos de risco] --> vision
   vision[vision<br/>recortes de imagem → transcrição<br/>lotes de 3; falha → 2ª tentativa sozinha] -->|há imagens pendentes| vision
   vision -->|acabou| segment
-  segment["segment<br/>[[imagem]] → [Imagem p. N: …]<br/>regex, lotes de 3"] --> structure
+  segment["segment<br/>[[imagem]] → [Imagem p. N: …]<br/>regex + gabarito ligado, lotes de 3"] --> structure
+  segment -->|sobrou questão sem resposta<br/>e resposta sem questão| link[link<br/>IA escolhe pares de ids]
+  link --> structure
   structure[structure<br/>LLM + grounding, 3 lotes em paralelo<br/>fallback: bloco cru] -->|há lotes| structure
   structure -->|acabou| classify
   classify -->|lote de 20| classify
@@ -130,6 +132,8 @@ Muitos materiais dizem, antes da 1ª questão, como estão organizados: capa/cab
 - **Instruções:** o texto sob "Como usar este material", "Instruções", "Orientações"… — vai para a revisão (painel "Guia do documento") e, resumido, como pista à IA.
 - **Capa/guia não vira questão** (`segmentQuestions(…, { skipPreamble })`).
 
+- **Temas por código** (2026-11-22): legenda "1A — Miomas — 17 estações" vira `guide.themes`; a questão sob o título "1A — Miomas" (seção do segmentador) recebe esse tema como assunto, sem IA (`themeForSection`). Instrução na mesma linha ("Como treinar: …") também conta.
+
 No nó `classify`, **antes da IA**: questão cujo número (rótulo "QUESTÃO N"; em material com esses rótulos, um bloco "1)"… logo depois é parte da questão anterior) está na legenda **e** com área+disciplina reconhecidas vai direto para o card "Área › Disciplina › Tema da legenda" — **0 requisições**. O resto vai à IA com o guia **dentro dos dados** (`wrapUntrusted`, nunca no system: é conteúdo do usuário) e a pista "tema indicado pelo documento" por questão. Se a IA falhar e o documento indicar área+disciplina, as questões ficam lá (tema da legenda ou "Geral"), não em "Sem área". Motivo (2026-11-20): `Questoes_OSCE_Ginecologia…pdf` (50 questões, legenda na pág. 2) terminou com tudo em "Sem área › Revisar categoria" porque a cota acabou antes da classificação; agora as 50 são classificadas sem IA.
 
 ### 5.3 Cota diária esgotada no meio da importação
@@ -137,6 +141,19 @@ No nó `classify`, **antes da IA**: questão cujo número (rótulo "QUESTÃO N";
 O OpenRouter responde **429 "Rate limit exceeded: free-models-per-day…"** quando a cota diária de modelos gratuitos da chave acaba (docs/11). Isso vale para todos os modelos `:free` até a virada do dia, então `classify()` (server/ai/client.ts) o separa do 429 por minuto (`errorKind = 'quota'`) e lança `AiQuotaExhaustedError` (subclasse de `AiUnavailableError`) sem percorrer o resto da cadeia. Na importação, `structure` e `classify` **pausam** (o passo falha, `/run` grava o último checkpoint e responde 429 com a mensagem que sugere o agente de IA próprio) — antes, cada lote restante virava rascunho "Processado sem IA" em silêncio. Distratores (opcionais) só param, com aviso na revisão; na visão, `/images` responde 429 e o cliente segue sem visão. No simulado e no editor, a mesma cota vira 429 com a alternativa sem IA.
 
 **No app** o PDF nunca vai ao servidor: o navegador (`src/features/import/importJob.ts` + hook `useImportJob`) cria o job com o texto marcado + manifesto de imagens, envia os recortes a `POST /api/imports/:id/images` (≤ 3 por requisição, < 4,5 MB, nada é armazenado além da transcrição; a imagem que falha 1x volta sozinha) e só então chama `/run` em loop, mostrando recortes, lotes e o nó atual; imagens que não chegaram (opção desmarcada, cota, retomada sem o PDF) viram `[Imagem p. N]`. **Na avaliação** (`npm run eval:import -- --vision`) o mesmo nó `vision` do grafo renderiza os recortes via `ctx.loadImages`. Custo: +1 requisição a cada 3 imagens (46 imagens → 16 chamadas, ~11 min com o modelo grátis). **Medido:** questões que dependem de imagem detectadas 36% → 94% (U2) e 13% → 83% (U3); quadro POP-Q exato na questão certa em 95%; métricas de texto não pioraram. Detalhes e limitações: [docs/10 §7](10-avaliacao-importador.md).
+
+### 5.4 Questões e gabarito separados (vários PDFs ou gabarito no fim) — 2026-11-22
+
+Spec 002 US6. Muitos materiais trazem as questões num arquivo e as respostas em outro "na mesma numeração", ou o gabarito na última página. Tudo sem IA, em `shared/answer-key.ts`, igual no navegador (resumo antes de processar) e no nó `segment`:
+
+1. **Vários PDFs, uma importação** (`src/features/import/pdfSet.ts`): cada arquivo é extraído sozinho; as páginas são renumeradas em sequência (o 2º continua de onde o 1º parou, ids `pN-k` também) e `documents[]` diz o papel de cada um — `misto` (padrão de um arquivo só), `questoes` ou `respostas`. `detectDocumentRole` sugere: blocos numerados quase sem "?" → gabarito; perguntas sem texto de resposta depois do "?" (descontando "Cite…", "Justifique.") → só questões; seção de gabarito no fim ou resposta depois das perguntas → misto. O usuário confirma na tela.
+2. **Gabarito no fim do PDF** (`findAnswerSection`): linha-título "GABARITO" / "Respostas comentadas" / "… — Gabarito" depois da 1ª questão, que só vale se as entradas seguintes têm números de questões anteriores (≥ 60%) e quase nenhum "?". Nos PDFs de referência (respostas junto das perguntas) nunca dispara: `eval:import` idêntico.
+3. **Leitura do gabarito** (`parseAnswerKey`): blocos por cabeçalho ("Estação 1.3", "QUESTÃO 7"), com itens "a)"/"Parte N" (etapas puladas e "Parte 2 e 3" valem); senão lista "1) …"; senão grade de letras "1-A 2-C". Texto antes do 1º cabeçalho e o resumo de cada tema ("Regra de ouro…", quadro FIGO) não são resposta de ninguém.
+4. **Ligação** (`linkAnswers`): número normalizado (`Estação 1B.3` → `1b.3`, `QUESTÃO 07` → `7`), k-ésima ocorrência (numeração que recomeça por unidade), deslocamento constante ("41…" × "1…", marcado), pela ordem sem números em comum (marcado); dentro da questão, item pelo rótulo. Resposta de etapa que não virou pergunta (dados juntados à etapa seguinte) vai para essa etapa; rótulo que a questão não tem vai para a última pergunta com aviso. Grade de letras + alternativas a)–e) → objetiva com a correta marcada. Nada é descartado: o que não ligar fica em `link.orphanEntries` e aparece na revisão (quadro "Gabarito").
+5. **Nó `link`** (opcional): só quando sobrou questão sem resposta **e** resposta sem questão. 1 requisição (tarefa `link`, cadeia `:free` da classificação, ≤ 40 + 40 itens dentro do `wrapUntrusted`) que devolve **pares de ids** — o texto continua sendo o do gabarito; ids inventados ou repetidos são ignorados; falha/cota → segue com as questões marcadas "Resposta não encontrada no gabarito".
+6. **Estruturação**: o bloco leva "Resposta (gabarito): …" depois da pergunta (e "Gabarito: X" na objetiva); o prompt `STRUCTURE_SYSTEM` diz que isso é a `resposta_esperada`. O fallback determinístico já sai com a resposta.
+
+Medição (docs/10 §10): par OSCE de Ginecologia (43 + 49 páginas) → 135/135 estações, 366/366 perguntas com resposta, 100% no bloco e no rótulo certos, 100% de cobertura do gabarito, ~30 ms.
 
 ## 6. Guardrails
 

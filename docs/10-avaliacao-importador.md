@@ -259,3 +259,38 @@ A rodada com visão deu **os mesmos números com e sem a mudança** (rodada de c
 **PDF de OSCE** (`Questoes_OSCE_Ginecologia_Respondidas_Fonte_Maior.pdf`, POP-Q como texto, sem gabarito): os **8 quadros** das questões 01, 04, 14, 17, 22, 28 (dois casos) e 44 viram a linha canônica e, no rascunho, **8 grades** — inclusive os dois da Q28, que o segmentador junta numa mesma linha (`POPQ_LINE` termina no valor do ponto D).
 
 **Com IA de estruturação:** não medido nesta data. A rodada `--ai --vision --batches 10 --pdf u2` parou na 1ª chamada com 429 `free-models-per-day` (cota diária do OpenRouter esgotada). O caminho da IA está coberto por teste sem rede (`structure-parallel.test.ts`: linha POP-Q e tabela da visão viram tabelas no rascunho). Rodar `npm run eval:import -- --ai --vision --reuse --batches 10 --pdf u2` (sem o cache `pred-ia-visao-u2.json`) quando a cota voltar e comparar com o §7.1 (POP-Q exato 88,9% no trecho).
+
+## 10. Questões e gabarito em PDFs separados (US6) — 2026-11-22
+
+Material do usuário com as questões num PDF e as respostas em outro, "na mesma numeração" (`OSCE_Ginecologia_Questoes.pdf`, 43 págs. · `OSCE_Ginecologia_Gabarito.pdf`, 49 págs.; conteúdo de terceiros, fora do Git). 135 estações ("Estação 1.1 — Título", "1B.3", "E.2") em 12 temas, itens "a)"/"Parte N", gabarito com resumo de apoio no início de cada tema.
+
+```bash
+npm run eval:link -- questoes.pdf gabarito.pdf     # PDFs separados (papel de cada arquivo detectado)
+npm run eval:link -- --single material.pdf         # PDF único
+```
+
+A conferência é **independente do parser**: recorta os blocos do gabarito com uma regex própria (cabeçalho da questão até o próximo) e verifica, no texto cru, se cada resposta ligada está ali, logo depois do rótulo do item, e quanto do bloco foi parar em alguma resposta.
+
+| Cenário (sem IA) | Questões | Perguntas com resposta | Fiel ao gabarito | No bloco certo | Rótulo certo | Cobertura do gabarito |
+|---|---|---|---|---|---|---|
+| Questões + gabarito (2 PDFs) | 135/135 | **366/366** | 100% | 100% | 100% | 100% |
+| Gabarito enviado primeiro | 135/135 | 366/366 | 100% | 100% | 100% | 100% |
+| Os dois textos num PDF só (gabarito na pág. 44) | 135/135 | 366/366 | — (ligação 135/135, seção achada na pág. 44) | | | |
+
+Papéis detectados: questões → "Só questões" (135 questões sem resposta depois das perguntas); gabarito → "Gabarito / respostas" (135 blocos numerados, quase sem perguntas). Segmentação + ligação: ~30 ms.
+
+O que precisou de regra nova (e está em teste, com textos inventados): "Fonte: Lista 1, Questão 27" abria questão; "Caso 2: Aa -3 · …" dentro da estação abria questão; etapa só com dados ("Parte 3: Citologia normal…", que o gabarito pula: "Parte 2 … Parte 4") virava pergunta sem resposta — agora vai junto da etapa seguinte; "Parte 2? Parte 3: …" na mesma linha; "Parte 4, sem desejo: … Parte 4, com desejo: …" no gabarito; título da estação quebrado em 2 linhas; o título fica fora do enunciado ("Estação 1.12 — Mioma parido" com a pergunta "Diagnóstico?").
+
+**Sem regressão nos PDFs de referência** (`eval:import`, agora pelo mesmo `segmentImport` do nó `segment`): Unidade II e III UNIDADE **idênticos** ao §4 sem visão e ao rodar `--vision --reuse` com o código antigo e o novo (U2 precisão 97,2%, POP-Q 95,1%; U3 recall 91,6%, precisão 95,0%).
+
+**PDF de OSCE com "Resposta comentada"** (`Questoes_OSCE_Ginecologia_Respondidas_Fonte_Maior.pdf`, resposta no fim de cada questão, 50 questões no gabarito `osce-ginecologia-respondidas.json`): o segmentador passou a separar as etapas "Parte N" e a ligar cada uma à resposta de mesmo rótulo depois de "Resposta comentada".
+
+| | antes | agora |
+|---|---|---|
+| Questões do gabarito encontradas | 50/50 | 50/50 |
+| Questões com o nº de perguntas certo | 2 | **42** |
+| Resposta por pergunta (tokens da resposta de referência na pergunta certa) | 37,4% | **88,6%** |
+| Resposta por questão (todas as perguntas juntas) | 98,1% | 98,1% |
+| Questões com todas as perguntas respondidas | 52 | 52 |
+
+**Ainda não medido:** o nó `link` (IA escolhe pares quando não há número em comum) só com IA simulada (`server/__tests__/import-link.test.ts`); um PDF real com gabarito de letras ("1-A 2-C") — coberto por teste com texto inventado.

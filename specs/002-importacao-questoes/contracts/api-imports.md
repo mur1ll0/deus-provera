@@ -53,6 +53,22 @@ rascunho ─► processando ─► revisao ─► concluida
 | `visibility` | `"privada"` \| `"publica"`. **Planejado** (T025); hoje não é aceito |
 | `pages` | 1–400 itens; `page` inteiro > 0; `text` ≤ 60.000 caracteres (texto extraído no navegador; o PDF nunca é enviado). Pode conter `[[imagem pN-k]]` na posição de cada imagem útil (`src/features/import/pdfExtract.ts` › `markedText`) |
 | `images` | Manifesto das imagens que o cliente vai enviar em `/images` (≤ 300; `id` = `p<página>-<ordem>`). Ids sem marcador no texto são ignorados. Padrão `[]` (sem visão: os marcadores viram `[Imagem p. N]`) |
+| `documents` | **Opcional** (US6). Vários PDFs na mesma importação, ou um PDF com papel diferente de `misto`: `[{ "name", "role": "questoes" \| "respostas" \| "misto", "firstPage", "lastPage" }]`, ≤ 10. As `pages` vêm na numeração **global** (o 2º arquivo continua de onde o 1º parou), e os ids das imagens também (`p44-1` = 1ª imagem da 1ª página do 2º arquivo de 43 páginas). Intervalos sobrepostos, invertidos ou sem nenhuma página enviada → **400**. Ausente = um PDF `misto` (como antes; um gabarito no fim do PDF é detectado do mesmo jeito) |
+
+Exemplo com questões e gabarito separados:
+
+```json
+{
+  "source": "pdf_ia",
+  "fileName": "Questoes.pdf + Gabarito.pdf",
+  "pages": [{ "page": 1, "text": "Estação 1.1 — …" }, { "page": 44, "text": "Gabarito…\nEstação 1.1 — …\na) …" }],
+  "images": [],
+  "documents": [
+    { "name": "Questoes.pdf", "role": "questoes", "firstPage": 1, "lastPage": 43 },
+    { "name": "Gabarito.pdf", "role": "respostas", "firstPage": 44, "lastPage": 92 }
+  ]
+}
+```
 
 Resposta 201 do PDF: `{ "id", "status": "processando", "images": <nº de imagens pendentes> }`.
 
@@ -167,6 +183,8 @@ Erros: 429 → "Importação pausada" com **Tentar continuar** (mesmo job, do ch
 ```
 
 - `cards` e `drafts` só vêm em `revisao`. Cada rascunho segue o [contrato v2](./import-format-v2.md) + `id`, `blockId`, `resumo`, `flags`.
+- `link` (US6, só em `revisao`, ausente sem gabarito): `{ "entries", "questions", "linkedQuestions", "totalItems", "answeredItems", "method": "numero" | "deslocamento" | "ordem" | "nenhum", "offset"?, "unmatchedQuestions": [{ "key", "label", "page" }], "orphanEntries": [{ "id", "key", "label", "page", "preview" }] }` (≤ 50 órfãs, `preview` ≤ 200 caracteres) — `LinkReport` em `shared/answer-key.ts`. `guide.themes` (`[{ "code", "name" }]`) traz a legenda de temas por código, quando houver.
+- `node` pode ser `link` (entre `segment` e `structure`) quando sobrou questão sem resposta **e** resposta sem questão.
 - Para jobs de agente externo, `payload` traz o JSON v2 validado, e a conversão para cards é feita no cliente (`draftsFromImportFile`). *(Planejado: o servidor devolver `cards`/`drafts` também nesse caso, unificando o formato.)*
 - `GET /api/imports` lista os jobs do usuário (ver abaixo).
 

@@ -1,14 +1,15 @@
-import { detectDocumentGuide, guideForPrompt, numberQuestions, parseTaxonomyLines, resolveGuideTaxonomy, topicForQuestion, type DocumentGuide } from '../../../shared/document-guide'
+import { applyEntry, LINK_MAX, linkSummary, NO_ANSWER_IN_KEY, segmentImport, type AnswerEntry, type ImportDocument, type LinkReport } from '../../../shared/answer-key'
+import { detectDocumentGuide, guideForPrompt, numberQuestions, parseTaxonomyLines, resolveGuideTaxonomy, themeForSection, topicForQuestion, type DocumentGuide } from '../../../shared/document-guide'
 import { inspectText, wrapUntrusted, type RiskLevel } from '../../../shared/guardrails'
 import { fullTextWithImages, imageDescriptionsIn, missingImageBrackets, type ImageKind } from '../../../shared/page-images'
 import { cleanItemLabel, importQuestionSchema, type ImportQuestion } from '../../../shared/schemas/import'
-import { heuristicKeyPoints, segmentQuestions, type SegmentedQuestion } from '../../../shared/segmenter'
+import { heuristicKeyPoints, type SegmentedQuestion } from '../../../shared/segmenter'
 import { tablesForDisplay } from '../../../shared/tables'
 import { AiQuotaExhaustedError, AiUnavailableError, callStructured, type AttemptLog } from '../client'
 import { END, StateGraph, type GraphState } from '../graph'
-import { CLASSIFY_SYSTEM, DISTRACTORS_SYSTEM, GUARD_SYSTEM, STRUCTURE_SYSTEM } from '../prompts'
+import { CLASSIFY_SYSTEM, DISTRACTORS_SYSTEM, GUARD_SYSTEM, LINK_SYSTEM, STRUCTURE_SYSTEM } from '../prompts'
 import { checkDistractors, checkGrounding } from '../quality'
-import { classificationSchema, distractorsSchema, guardSchema, structuredBatchSchema } from '../schemas'
+import { classificationSchema, distractorsSchema, guardSchema, linkSchema, structuredBatchSchema } from '../schemas'
 import { describeImageBatch, VISION_BATCH, VISION_MAX_ATTEMPTS, type PageImageInput } from './vision'
 
 /**
@@ -110,6 +111,12 @@ export interface ImportState extends GraphState {
   rawPages: { page: number; text: string }[]
   /** Imagens das páginas (etapa de visão). Ausente em jobs antigos. */
   images?: Record<string, PageImageState>
+  /** Vários PDFs (questões + gabarito), na numeração global das páginas. Ausente = um PDF só. */
+  docs?: ImportDocument[]
+  /** Questões × gabarito: o que ligou e o que sobrou (exibido na revisão). Ausente sem gabarito. */
+  link?: LinkReport
+  /** Sobras para o nó `link` (a IA só escolhe pares): blocos sem resposta e respostas sem questão. */
+  pendingLink?: { blockIds: string[]; entries: AnswerEntry[] }
   blocks: Block[]
   /** O que o próprio documento diz sobre a organização (título, instruções, temas por questão). Ausente em jobs antigos. */
   guide?: DocumentGuide
@@ -173,8 +180,25 @@ function chunkBy<T>(items: T[], size: (t: T) => number, maxSize: number, maxItem
   return out
 }
 
-const blockText = (s: SegmentedQuestion) =>
-  [s.sourceLabel, s.stem, ...s.items.map((it) => [it.label && `${it.label})`, it.prompt, it.answer].filter(Boolean).join(' '))].filter(Boolean).join('\n')
+/**
+ * Texto do bloco (grounding e prompt de estruturação). Resposta vinda do gabarito vai explícita
+ * ("Resposta (gabarito): …"); objetiva montada pelo gabarito de letras lista as alternativas e a letra.
+ */
+export const blockText = (s: SegmentedQuestion) =>
+  [
+    s.sourceLabel,
+    s.stem,
+    ...s.items.map((it) => {
+      const label = it.label && (it.label.length <= 2 ? `${it.label})` : `${it.label}:`)
+      if (it.choices) {
+        return [label, it.prompt, ...it.choices.map((c) => `${c.label}) ${c.text}`), it.correct && `Gabarito: ${it.correct}`, it.answer && `Comentário (gabarito): ${it.answer}`].filter(Boolean).join('\n')
+      }
+      if (it.answerSource === 'gabarito') return [[label, it.prompt].filter(Boolean).join(' '), it.answer && `Resposta (gabarito): ${it.answer}`].filter(Boolean).join('\n')
+      return [label, it.prompt, it.answer].filter(Boolean).join(' ')
+    }),
+  ]
+    .filter(Boolean)
+    .join('\n')
 
 /** Imagens transcritas dentro do bloco → `tem_imagem` / `descricao_imagem` (sem IA extra). */
 function imageFields(text: string): Pick<DraftItem, 'tem_imagem' | 'descricao_imagem'> {
@@ -192,16 +216,28 @@ function draftFromSegment(b: Block, flags: string[]): DraftItem {
     ...imageFields(b.text),
     rotulo: b.seg.sourceLabel ?? null,
     enunciado: tablesForDisplay(b.seg.stem).slice(0, 12000) || '(enunciado não identificado)',
-    perguntas: b.seg.items.map((it) => ({
-      rotulo: it.label ?? null,
-      texto: tablesForDisplay(it.prompt),
-      tipo: 'discursiva' as const,
-      resposta_esperada: it.answer ? tablesForDisplay(it.answer) : null,
-      pontos_chave: heuristicKeyPoints(it.answer),
-      alternativas: null,
-    })),
+    perguntas: b.seg.items.map((it) =>
+      it.choices
+        ? {
+            // objetiva montada pelo gabarito de letras ("1-C")
+            rotulo: it.label ?? null,
+            texto: tablesForDisplay(it.prompt),
+            tipo: 'objetiva' as const,
+            resposta_esperada: it.answer ? tablesForDisplay(it.answer) : null,
+            pontos_chave: heuristicKeyPoints(it.answer),
+            alternativas: it.choices.map((c) => ({ texto: tablesForDisplay(c.text), correta: c.label.toUpperCase() === it.correct })),
+          }
+        : {
+            rotulo: it.label ? cleanItemLabel(it.label) : null,
+            texto: tablesForDisplay(it.prompt),
+            tipo: 'discursiva' as const,
+            resposta_esperada: it.answer ? tablesForDisplay(it.answer) : null,
+            pontos_chave: heuristicKeyPoints(it.answer),
+            alternativas: null,
+          },
+    ),
     pagina: b.seg.page,
-    flags,
+    flags: [...flags, ...(b.seg.flags ?? [])],
   }
 }
 
@@ -308,7 +344,11 @@ export function guideHints(drafts: Record<string, DraftItem>, blocks: Block[], g
   const blockById = Object.fromEntries(blocks.map((b) => [b.id, b]))
   const list = Object.values(drafts)
   const numbers = numberQuestions(list.map((d) => blockById[d.blockId]?.seg.sourceLabel ?? d.rotulo))
-  return { resolved, byId: Object.fromEntries(list.map((d, i) => [d.id, { n: numbers[i], topic: topicForQuestion(guide, numbers[i]) }])) }
+  // legenda por número da questão; senão, o tema por código ("1A — Miomas") sob cujo título a questão está
+  return {
+    resolved,
+    byId: Object.fromEntries(list.map((d, i) => [d.id, { n: numbers[i], topic: topicForQuestion(guide, numbers[i]) ?? themeForSection(guide, blockById[d.blockId]?.seg.section) }])),
+  }
 }
 
 /**
@@ -330,7 +370,7 @@ export function classifyByGuide(drafts: Record<string, DraftItem>, blocks: Block
       area: resolved.area,
       disciplina: resolved.disciplina,
       assunto: topic.assunto,
-      descricao: `Tema indicado pelo próprio documento na lista de questões (questões ${topic.source}).`,
+      descricao: topic.source.startsWith('tema ') ? `Tema indicado pelo próprio documento (lista de temas, ${topic.source}).` : `Tema indicado pelo próprio documento na lista de questões (questões ${topic.source}).`,
       questoes: [],
     }
     g.questoes.push({ id })
@@ -396,7 +436,7 @@ async function structureBatch(
         tem_imagem: q.tem_imagem || !!img.tem_imagem,
         descricao_imagem: img.descricao_imagem,
         pagina: b.seg.page,
-        flags: b.risk !== 'baixo' ? ['Guardrail: conteúdo suspeito removido'] : [],
+        flags: [...(b.risk !== 'baixo' ? ['Guardrail: conteúdo suspeito removido'] : []), ...(b.seg.flags ?? [])],
       }
     }
     // Blocos que o modelo omitiu (sem "descartados") voltam pelo fallback para não perder conteúdo.
@@ -487,18 +527,75 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
   .addNode('segment', async (s) => {
     // `[[imagem pN-k]]` → transcrição da visão (ou "[Imagem p. N]"), antes de separar as questões
     const fullText = fullTextWithImages(s.rawPages, s.images ?? {})
-    // Capa / instruções / legenda de temas antes da 1ª questão: guia da classificação, não questão
-    const guide = detectDocumentGuide(s.rawPages)
-    const blocks: Block[] = segmentQuestions(fullText, { skipPreamble: guide.hasFrontMatter }).map((seg, i) => {
-      const text = blockText(seg)
-      return { id: `b${i + 1}`, text, seg, risk: inspectText(text).risk }
+    // Capa / instruções / legenda de temas antes da 1ª questão: guia da classificação, não questão.
+    // Questões e gabarito separados (vários PDFs ou seção de respostas no fim): ligados aqui, sem IA.
+    const seg = segmentImport(fullText, s.docs)
+    const firstQuestions = s.docs?.find((d) => d.role !== 'respostas')
+    const guide = s.docs?.length && firstQuestions ? detectDocumentGuide(s.rawPages.filter((p) => p.page >= firstQuestions.firstPage && p.page <= firstQuestions.lastPage)) : s.docs?.length ? seg.guide : detectDocumentGuide(s.rawPages)
+    const blocks: Block[] = seg.questions.map((q, i) => {
+      const text = blockText(q)
+      return { id: `b${i + 1}`, text, seg: q, risk: inspectText(text).risk }
     })
     const pendingBatches = chunkBy(blocks, (b) => b.text.length, MAX_BATCH_CHARS, MAX_BATCH_ITEMS).map((batch) => batch.map((b) => b.id))
-    const found = [guide.topics.length && `lista de temas por questão (${guide.topics.length} temas)`, guide.instructions && 'instruções do material'].filter(Boolean)
-    const warnings = found.length ? [...s.warnings, `Guia do documento encontrado${guide.page ? ` na pág. ${guide.page}` : ''}: ${found.join(' e ')} — usado na classificação.`] : s.warnings
-    return { blocks, guide, pendingBatches, warnings }
+    const found = [
+      guide.topics.length && `lista de temas por questão (${guide.topics.length} temas)`,
+      guide.themes?.length && `lista de temas (${guide.themes.length})`,
+      guide.instructions && 'instruções do material',
+    ].filter(Boolean)
+    const warnings = found.length ? [...s.warnings, `Guia do documento encontrado${guide.page ? ` na pág. ${guide.page}` : ''}: ${found.join(' e ')} — usado na classificação.`] : [...s.warnings]
+    if (seg.link) warnings.push(`${seg.answerSectionPage ? `Seção de respostas encontrada na pág. ${seg.answerSectionPage}. ` : ''}${linkSummary(seg.link)}`)
+    // Sobrou questão sem resposta E resposta sem questão: o nó `link` pede à IA só os pares (ids)
+    const unanswered = blocks.filter((b) => b.seg.flags?.includes(NO_ANSWER_IN_KEY)).map((b) => b.id)
+    const pendingLink = unanswered.length && seg.orphans.length ? { blockIds: unanswered.slice(0, LINK_MAX), entries: seg.orphans.slice(0, LINK_MAX) } : undefined
+    return { blocks, guide, pendingBatches, warnings, ...(seg.link ? { link: seg.link } : {}), pendingLink }
   })
-  .addEdge('segment', 'structure')
+  .addConditionalEdges('segment', (s) => (s.pendingLink ? 'link' : 'structure'))
+
+  /* 3b. Gabarito sem número em comum: a IA escolhe os pares questão × resposta (o texto continua sendo o do gabarito) */
+  .addNode('link', async (s, ctx) => {
+    const pending = s.pendingLink
+    if (!pending) return {}
+    const byId = Object.fromEntries(s.blocks.map((b) => [b.id, b]))
+    const entryById = Object.fromEntries(pending.entries.map((e) => [e.id, e]))
+    try {
+      await ctx.reserveAiRequest()
+      const questions = pending.blockIds.map((id) => {
+        const q = byId[id].seg
+        return `questao_id: ${id}${q.sourceLabel ? ` (${q.sourceLabel})` : ''}\n${q.stem.slice(0, 300)}\nperguntas: ${q.items.map((i) => [i.label, i.prompt.slice(0, 80)].filter(Boolean).join(' ')).join(' | ').slice(0, 300)}`
+      })
+      const answers = pending.entries.map((e) => `resposta_id: ${e.id}${e.label ? ` (${e.label})` : ''}\n${e.text.slice(0, 400)}`)
+      const r = await callStructured({
+        task: 'link',
+        userId: ctx.userId,
+        deadline: ctx.deadline,
+        schema: linkSchema,
+        system: LINK_SYSTEM(s.nonce),
+        prompt: wrapUntrusted(`QUESTÕES SEM RESPOSTA:\n${questions.join('\n---\n')}\n===\nRESPOSTAS SEM QUESTÃO:\n${answers.join('\n---\n')}`, s.nonce),
+      })
+      const usedQ = new Set<string>()
+      const usedE = new Set<string>()
+      const blocks = [...s.blocks]
+      for (const p of r.value.pares) {
+        // só ids das listas enviadas, cada um uma vez (id inventado ou repetido é ignorado)
+        if (!pending.blockIds.includes(p.questao_id) || !entryById[p.resposta_id] || usedQ.has(p.questao_id) || usedE.has(p.resposta_id)) continue
+        usedQ.add(p.questao_id)
+        usedE.add(p.resposta_id)
+        const i = blocks.findIndex((b) => b.id === p.questao_id)
+        const base = { ...blocks[i].seg, flags: blocks[i].seg.flags?.filter((f) => f !== NO_ANSWER_IN_KEY) }
+        const seg = applyEntry(base, entryById[p.resposta_id], 'ia')
+        const text = blockText(seg)
+        blocks[i] = { ...blocks[i], seg, text, risk: inspectText(text).risk }
+      }
+      const warnings = usedQ.size ? [...s.warnings, `IA ligou ${usedQ.size} questão(ões) a respostas do gabarito sem número em comum — confira as marcadas.`] : s.warnings
+      const link = s.link ? { ...s.link, linkedQuestions: s.link.linkedQuestions + usedQ.size, orphanEntries: s.link.orphanEntries.filter((o) => !usedE.has(o.id)), unmatchedQuestions: s.link.unmatchedQuestions.filter((q) => !usedQ.has(`b${q.key.slice(1)}`)) } : s.link
+      return { blocks, warnings, link, pendingLink: undefined }
+    } catch (err) {
+      if (!(err instanceof AiUnavailableError)) throw err
+      // opcional: sem IA (ou sem cota) as questões seguem marcadas "Resposta não encontrada no gabarito"
+      return { pendingLink: undefined, warnings: [...s.warnings, 'Ligação por IA das respostas que sobraram indisponível agora — confira as questões sem resposta.'] }
+    }
+  })
+  .addEdge('link', 'structure')
 
   /* 4. Estruturação com IA (grounding obrigatório) + fallback determinístico — até STRUCTURE_PARALLEL lotes por passo */
   .addNode('structure', async (s, ctx) => {
@@ -544,7 +641,7 @@ export const importGraph = new StateGraph<ImportState, ImportCtx>()
     const batch = batchIds.map((id) => s.drafts[id]).filter(Boolean)
     if (!batch.length) return nextClassifyQueue(rest, s.cards, s.classifyRetried)
     const hints = guideHints(s.drafts, s.blocks, s.guide, ctx.taxonomy)
-    const sectionOf = Object.fromEntries(s.blocks.map((b) => [b.id, b.seg.section]))
+    const sectionOf = Object.fromEntries(s.blocks.map((b) => [b.id, [b.seg.section, b.seg.title && `título: ${b.seg.title}`].filter(Boolean).join(' · ') || undefined]))
     try {
       await ctx.reserveAiRequest()
       const guideText = s.guide ? guideForPrompt(s.guide, hints.resolved) : ''

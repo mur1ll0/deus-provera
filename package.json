@@ -28,6 +28,7 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "gabarito:build": "tsx scripts/build-gabarito.ts",
     "eval:import": "tsx scripts/eval-import.ts",
+    "eval:link": "tsx scripts/eval-link.ts",
     "prompt:sync": "tsx scripts/sync-prompt-doc.ts",
     "ai:ping": "tsx scripts/ai-ping.ts"
   },

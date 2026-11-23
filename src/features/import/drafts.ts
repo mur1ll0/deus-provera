@@ -1,3 +1,4 @@
+import { linkSummary, NO_ANSWER_IN_KEY, type LinkReport } from '@shared/answer-key'
 import type { DocumentGuide } from '@shared/document-guide'
 import type { QuestionItem, Visibility } from '@shared/domain'
 import { inspectText } from '@shared/guardrails'
@@ -25,6 +26,8 @@ export interface ReviewNotes {
   guide?: DocumentGuide
   /** Avisos do pipeline, sem repetição ("… (8×)"). */
   warnings: string[]
+  /** Questões × gabarito (PDFs separados ou gabarito no fim): o que ligou e as respostas que sobraram. */
+  link?: LinkReport
 }
 
 /** Avisos repetidos (um por lote) viram uma linha com a contagem. */
@@ -50,12 +53,12 @@ function upsertCard(cards: Map<string, ImportCard>, area: string, discipline: st
 }
 
 /** PDF → segmentos determinísticos (enunciado + perguntas) → (no produto: LLM estrutura) → rascunhos + cards. */
-export function draftsFromSegments(items: SegmentedQuestion[], visibility: Visibility, fileName: string): ReviewState {
+export function draftsFromSegments(items: SegmentedQuestion[], visibility: Visibility, fileName: string, link?: LinkReport | null): ReviewState {
   const drafts: Record<string, DraftQuestion> = {}
   const cards = new Map<string, ImportCard>()
 
   for (const seg of items) {
-    const flags = new Set<string>()
+    const flags = new Set<string>(seg.flags ?? [])
     // POP-Q (linha canônica) → grade Markdown que a tela desenha (shared/tables.ts)
     const stem = tablesForDisplay(guard(seg.stem, flags) ?? seg.stem)
     const qItems: QuestionItem[] = seg.items.map((it) => {
@@ -63,15 +66,19 @@ export function draftsFromSegments(items: SegmentedQuestion[], visibility: Visib
       const answer = guarded ? tablesForDisplay(guarded) : guarded
       return {
         id: uid('it'),
-        label: it.label,
+        label: cleanItemLabel(it.label) ?? undefined,
         prompt: tablesForDisplay(guard(it.prompt, flags) ?? it.prompt),
-        type: 'discursiva',
+        // objetiva montada pelo gabarito de letras ("1-C")
+        type: it.choices ? 'objetiva' : 'discursiva',
         expectedAnswer: answer,
         keyPoints: heuristicKeyPoints(answer),
+        ...(it.choices
+          ? { alternatives: it.choices.map((c) => ({ id: uid('alt'), text: guard(c.text, flags) ?? c.text, correct: c.label.toUpperCase() === it.correct, source: 'usuario' as const })) }
+          : {}),
       }
     })
-    const missing = qItems.filter((i) => !i.expectedAnswer).length
-    if (missing) flags.add(missing === qItems.length ? 'Resposta não encontrada — revise' : `${missing} pergunta(s) sem resposta — revise`)
+    const missing = qItems.filter((i) => !i.expectedAnswer && !i.alternatives?.length).length
+    if (missing && !flags.has(NO_ANSWER_IN_KEY)) flags.add(missing === qItems.length ? 'Resposta não encontrada — revise' : `${missing} pergunta(s) sem resposta — revise`)
     if (stem.length < 15) flags.add('Enunciado muito curto — revise')
 
     const id = uid('dq')
@@ -89,7 +96,7 @@ export function draftsFromSegments(items: SegmentedQuestion[], visibility: Visib
     upsertCard(cards, c.area, c.discipline, c.topic, id)
   }
 
-  return { cards: describeCards([...cards.values()], drafts), drafts, source: 'pdf_ia', fileName }
+  return { cards: describeCards([...cards.values()], drafts), drafts, source: 'pdf_ia', fileName, ...(link ? { notes: { warnings: [linkSummary(link)], link } } : {}) }
 }
 
 /** Uma questão no contrato v2 → rascunho da revisão (guardrail reaplicado em todos os campos de texto). */
@@ -142,7 +149,7 @@ export function draftsFromImportFile(file: ImportFile, visibility: Visibility): 
  * e manda para "Revisar categoria" qualquer questão que nenhum card tenha citado.
  */
 export function draftsFromServerJob(
-  view: { cards?: ServerCard[]; drafts?: Record<string, ServerDraft>; guide?: DocumentGuide; warnings?: string[] },
+  view: { cards?: ServerCard[]; drafts?: Record<string, ServerDraft>; guide?: DocumentGuide; warnings?: string[]; link?: LinkReport | null },
   visibility: Visibility,
   fileName?: string,
 ): ReviewState {
@@ -165,7 +172,7 @@ export function draftsFromServerJob(
   const orphans = Object.keys(drafts).filter((id) => !placed.has(id))
   if (orphans.length) cards.push({ id: uid('card'), area: 'Sem área', discipline: 'Sem disciplina', topic: 'Revisar categoria', description: '', questionIds: orphans })
   const warnings = summarizeWarnings(view.warnings)
-  const notes = view.guide || warnings.length ? { guide: view.guide, warnings } : undefined
+  const notes = view.guide || warnings.length || view.link ? { guide: view.guide, warnings, ...(view.link ? { link: view.link } : {}) } : undefined
   return { cards: describeCards(cards, drafts), drafts, source: 'pdf_ia', fileName, ...(notes ? { notes } : {}) }
 }
 

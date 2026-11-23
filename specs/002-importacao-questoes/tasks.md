@@ -100,6 +100,18 @@ Pré-requisito: spec 001 (sessão, `src/lib/api.ts`) na Fundação.
 - [ ] T053 Medir SC-001 (tempo de extração) e SC-002 (requisições por PDF) e registrar em `docs/05-pipeline-ia.md` — parcial: tempos e requisições por lote dos dois PDFs já estão em docs/10 §5–§8; falta consolidar SC-001/SC-002 no docs/05
 - [ ] T054 Remover `runMockPipeline`, `classifyText` e `aiGenerateDistractors` mock quando os endpoints reais estiverem ativos (`src/mocks/ai.ts`)
 
+## Fase 9 — US6 Questões e gabarito em PDFs separados (P1) — 2026-11-22
+
+- [x] T071 Segmentador: "Estação N.N — Título" (título fora do enunciado) e "Caso N" (só sem QUESTÃO/Estação), "Parte N" como pergunta (também no meio da linha; etapa só com dados vai para a seguinte), títulos de tema "1A — Tema" como seção, "Resposta comentada" dentro da questão, modo só-questões (`answers: false`) e modo gabarito (`key`); "Fonte: …, Questão 27" não abre questão (`shared/segmenter.ts`)
+- [x] T072 Guia do documento: legenda de temas por código ("1A — Miomas — 17 estações" → `themes`), "Temas" como título de legenda, instrução na mesma linha ("Como treinar: …") e capa antes da 1ª "Estação" (`shared/document-guide.ts`)
+- [x] T073 `shared/answer-key.ts`: `detectDocumentRole`, `findAnswerSection` (gabarito no fim do PDF), `parseAnswerKey` (cabeçalhos, lista numerada, grade de letras), `linkAnswers`/`applyEntry` (número com k-ésima ocorrência, deslocamento, ordem; item por rótulo; objetiva pela letra) e `segmentImport` + testes (`shared/__tests__/answer-key.test.ts`)
+- [x] T074 API e grafo: `documents[]` em `POST /api/imports` (400 se inválido), `docs`/`link`/`pendingLink` no estado, nó `segment` com `segmentImport`, nó `link` (tarefa `link`, `:free`, só pares de ids, opcional), `link` em `GET /:id`, classificação pelo tema da seção sem IA, prompt de estruturação com "Resposta (gabarito)" (`server/routes/imports.ts`, `server/ai/pipelines/import-graph.ts`, `server/ai/{models,schemas,prompts}.ts`) + testes sem banco (`server/__tests__/import-link.test.ts`)
+- [x] T075 Tela de PDF: vários arquivos (até 5), papel por arquivo sugerido e editável, "Adicionar outro PDF", resumo da ligação antes de processar, recortes de imagem do arquivo certo (`src/features/import/{ImportPage.tsx,pdfSet.ts,pageImages.ts,importJob.ts,pdfExtract.ts}`) + testes (`src/features/import/__tests__/pdfSet.test.ts`)
+- [x] T076 Revisão: quadro "Gabarito" (ligadas, sem resposta, respostas sem questão com o texto) e temas do guia (`src/features/import/ReviewBoard.tsx`, `src/features/import/drafts.ts`)
+- [x] T077 Agente externo: regra "MAIS DE UM ARQUIVO" no prompt e instrução na tela (`shared/prompts/external-agent.ts`, `docs/prompts/prompt-agente-externo.md`)
+- [x] T078 `npm run eval:link` (verificação independente no texto cru do gabarito) e registro em docs/10 §10; `eval:import` passa a usar `segmentImport` (mesmo caminho do nó `segment`) sem mudar as métricas (`scripts/eval-link.ts`, `scripts/eval-import.ts`)
+- [ ] T079 Validar ao vivo contra o Neon + IA real (o nó `link` só foi testado com IA simulada; nada foi executado no banco de produção)
+
 ## Definição de pronto
 
 - [x] Os três métodos importam e salvam questões reais no Neon, com revisão obrigatória (T023, T027, T048)

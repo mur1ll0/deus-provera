@@ -19,6 +19,7 @@
  *
  * O conteúdo do guia é DADO do usuário: nunca vira instrução de sistema (vai embrulhado em wrapUntrusted).
  */
+import { QUESTION_HEAD_LINE } from './segmenter'
 
 export interface TopicRule {
   /** Números das questões cobertas ("01-04" → 1, 2, 3, 4). */
@@ -43,6 +44,11 @@ export interface DocumentGuide {
   instructions?: string
   /** Legenda questão → tema (vazia se o documento não tiver). */
   topics: TopicRule[]
+  /**
+   * Temas por código ("1A — Miomas — 17 estações"): valem para as questões sob o título do tema
+   * (`section`). Ausente em jobs antigos.
+   */
+  themes?: { code: string; name: string }[]
   /** Página onde está a legenda/instruções (para a mensagem na revisão). */
   page?: number
   /** O documento tem capa/guia antes da 1ª questão: esse trecho não deve virar questão. */
@@ -64,13 +70,20 @@ const fold = (s: string) =>
 
 const PAGE_MARK = /\[\[página (\d+)\]\]/g
 const IMAGE_MARK = /\[\[imagem [^\]]*\]\]/g
-/** Início da 1ª questão: "QUESTÃO 01", "Questão 2 -"… */
-const QUESTION_HEAD = /^QUEST[ÃA]O\s*\d{1,3}\b/i
+/** Início da 1ª questão: "QUESTÃO 01", "Questão 2 -", "Estação 1.1 —", "Caso 3:"… (mesma regra do segmentador). */
+const QUESTION_HEAD = QUESTION_HEAD_LINE
 /** Rodapé/numeração de página. */
 const PAGE_FOOTER = /^(p[áa]gina|p[áa]g\.?)\s*\d{1,4}(\s*(de|\/)\s*\d{1,4})?$|^\d{1,4}$/i
 const INSTRUCTIONS_HEAD =
-  /^(como (usar|utilizar|estudar)( (este|esse|o))? ?(material|caderno|apostila|documento|livro|guia)?|instru[çc][õo]es( gerais| de uso| para (uso|o estudo))?|orienta[çc][õo]es( gerais| de estudo)?|leia (com aten[çc][ãa]o|atentamente)|observa[çc][õo]es( gerais| importantes)?|apresenta[çc][ãa]o|sobre (este|esse|o) material|nota (ao|aos) (leitor|leitores|estudantes?))\s*:?$/i
-const LEGEND_HEAD = /^(lista de quest[õo]es|quest[õo]es (e|por) temas?|temas? (por|das) quest[õo]es|distribui[çc][ãa]o (dos|por) temas?|[íi]ndice( de quest[õo]es| por temas?)?|sum[áa]rio|conte[úu]do)\s*:?$/i
+  /^(como (usar|utilizar|estudar|treinar)( (este|esse|o))? ?(material|caderno|apostila|documento|livro|guia)?|instru[çc][õo]es( gerais| de uso| para (uso|o estudo))?|orienta[çc][õo]es( gerais| de estudo)?|leia (com aten[çc][ãa]o|atentamente)|observa[çc][õo]es( gerais| importantes)?|apresenta[çc][ãa]o|sobre (este|esse|o) material|nota (ao|aos) (leitor|leitores|estudantes?))\s*:?$/i
+/** Instrução na mesma linha do título: "Como treinar: leia o caso, responda…". */
+const INSTRUCTIONS_INLINE = /^(como (usar|utilizar|estudar|treinar)( (este|esse|o))? ?(material|caderno|apostila|documento|livro|guia)?|instru[çc][õo]es|orienta[çc][õo]es)\s*:\s*(\S.{10,})$/i
+/**
+ * Legenda de TEMAS por código (não por número de questão): "1A — Miomas — 17 estações", "Extra — Vulvovaginites".
+ * O tema vale para as questões sob o título de mesmo nome (`section` do segmentador).
+ */
+const THEME_LEGEND = /^((?:\d{1,2}[A-Z]?|[A-Z]|Extra|EXTRA|Tema\s+\d{1,2}))\s+[—–-]\s+(\S.{1,90}?)\s*(?:[—–-]\s*\d{1,3}\s+(?:esta[çc][õo]es|quest[õo]es|casos|itens))?$/
+const LEGEND_HEAD = /^(temas?( principais| abordados)?|lista de quest[õo]es|quest[õo]es (e|por) temas?|temas? (por|das) quest[õo]es|distribui[çc][ãa]o (dos|por) temas?|[íi]ndice( de quest[õo]es| por temas?)?|sum[áa]rio|conte[úu]do)\s*:?$/i
 /** Cabeçalho da tabela da legenda ("Questões Temas principais", "Nº Assunto"). */
 const LEGEND_TABLE_HEAD = /^(quest[õo]es|n[º°o.]*|n[úu]mero)\s+(temas?|assuntos?|t[óo]picos?)(\s+\p{L}+)?$/iu
 
@@ -186,6 +199,21 @@ export function detectDocumentGuide(pages: { page: number; text: string }[]): Do
       page = body[iStart].page
     }
   }
+  const iInline = instructions ? -1 : body.findIndex((l) => INSTRUCTIONS_INLINE.test(l.text))
+  if (iInline >= 0) {
+    const parts = [body[iInline].text.match(INSTRUCTIONS_INLINE)![6]]
+    for (const l of body.slice(iInline + 1)) {
+      if (LEGEND_HEAD.test(l.text) || LEGEND_TABLE_HEAD.test(l.text) || THEME_LEGEND.test(l.text) || INSTRUCTIONS_HEAD.test(l.text) || INSTRUCTIONS_INLINE.test(l.text) || /^fontes?\s*:/i.test(l.text)) break
+      parts.push(l.text)
+    }
+    instructions = parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, 1500)
+    page = body[iInline].page
+  }
+
+  // Legenda de temas por código ("1A — Miomas — 17 estações"): exige a contagem em ≥ 2 linhas
+  const themeLines = body.filter((l) => THEME_LEGEND.test(l.text) && /\d{1,3}\s+(esta[çc][õo]es|quest[õo]es|casos|itens)\s*$/i.test(l.text))
+  const themes = themeLines.length >= 2 ? themeLines.map((l) => l.text.match(THEME_LEGEND)!).map((m) => ({ code: m[1], name: cleanTopic(m[2]) })) : []
+  if (themes.length) page ??= themeLines[0].page
 
   // Legenda questão → tema
   const topics: TopicRule[] = []
@@ -193,7 +221,7 @@ export function detectDocumentGuide(pages: { page: number; text: string }[]): Do
   let pendingNums: string | null = null
   for (const l of body) {
     const t = l.text
-    if (DOT_LEADER.test(t) || LEGEND_HEAD.test(t) || LEGEND_TABLE_HEAD.test(t)) {
+    if (DOT_LEADER.test(t) || LEGEND_HEAD.test(t) || LEGEND_TABLE_HEAD.test(t) || (themes.length && THEME_LEGEND.test(t))) {
       last = null
       pendingNums = null
       continue
@@ -245,9 +273,18 @@ export function detectDocumentGuide(pages: { page: number; text: string }[]): Do
     explicit,
     instructions,
     topics: legend,
-    page: legend.length || instructions ? page : undefined,
-    hasFrontMatter: firstQ > 0 && (!!instructions || legend.length > 0),
+    ...(themes.length ? { themes } : {}),
+    page: legend.length || instructions || themes.length ? page : undefined,
+    hasFrontMatter: firstQ > 0 && (!!instructions || legend.length > 0 || themes.length > 0),
   }
+}
+
+/** Tema da legenda por código que corresponde ao título de seção da questão ("Miomas", "SUA (aguda…)"). */
+export function themeForSection(guide: DocumentGuide | undefined, section: string | undefined): { assunto: string; source: string } | undefined {
+  if (!guide?.themes?.length || !section) return undefined
+  const s = fold(section)
+  const hit = guide.themes.find((t) => fold(t.name) === s) ?? guide.themes.find((t) => s.startsWith(fold(t.name)) || fold(t.name).startsWith(s))
+  return hit ? { assunto: hit.name, source: `tema ${hit.code}` } : undefined
 }
 
 /** Tema que a legenda indica para a questão nº `n`. */

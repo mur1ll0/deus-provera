@@ -1,5 +1,6 @@
 import { getDocument } from 'pdfjs-dist'
 import type { ExtractedPdf } from './pdfExtract'
+import { locatePage } from './pdfSet'
 
 /**
  * Etapa de VISÃO no navegador (spec 002 T049): renderiza o RECORTE de cada imagem útil das páginas
@@ -35,13 +36,18 @@ async function canvasToBase64(canvas: HTMLCanvasElement, quality: number): Promi
 export async function renderPageImages(pdf: ExtractedPdf, opts: { ids?: string[]; onProgress?: (done: number, total: number) => void } = {}): Promise<PageImageCrop[]> {
   const wanted = pdf.pages.flatMap((p) => p.imageRegions.map((r) => ({ ...r, page: p.page }))).filter((r) => !opts.ids || opts.ids.includes(r.id))
   if (!wanted.length) return []
-  const task = getDocument({ data: new Uint8Array(await pdf.file.arrayBuffer()) })
-  const doc = await task.promise
+  // Vários PDFs (questões + gabarito): cada página global vem do seu arquivo (pdfSet.ts) — abre cada um uma vez
+  const tasks = new Map<File, ReturnType<typeof getDocument>>()
+  const docOf = async (file: File) => {
+    if (!tasks.has(file)) tasks.set(file, getDocument({ data: new Uint8Array(await file.arrayBuffer()) }))
+    return tasks.get(file)!.promise
+  }
   const out: PageImageCrop[] = []
   const R = PAGE_IMAGE_RENDER
   try {
     for (const img of wanted) {
-      const page = await doc.getPage(img.page)
+      const at = locatePage(pdf, img.page)
+      const page = await (await docOf(at.file)).getPage(at.page)
       const r = img.rect
       // escala adaptativa: quadros pequenos ganham resolução (legibilidade para o modelo)
       let scale = Math.min(R.maxScale, Math.max(R.minScale, R.targetSide / Math.max(r.w, r.h)))
@@ -73,7 +79,7 @@ export async function renderPageImages(pdf: ExtractedPdf, opts: { ids?: string[]
       opts.onProgress?.(out.length, wanted.length)
     }
   } finally {
-    await task.destroy()
+    await Promise.all([...tasks.values()].map((t) => t.destroy()))
   }
   return out
 }

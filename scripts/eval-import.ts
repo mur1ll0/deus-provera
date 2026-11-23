@@ -19,7 +19,7 @@
 import './load-env'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fullTextWithImages, type ImageNote } from '../shared/page-images'
-import { segmentQuestions } from '../shared/segmenter'
+import { segmentImport } from '../shared/answer-key'
 import { popqGridToLine } from '../shared/tables'
 import type { PageImageState } from '../server/ai/pipelines/import-graph'
 import { parseGabarito, type GoldQuestion } from './gabarito'
@@ -115,8 +115,9 @@ function popqSets(text: string): Record<string, string>[] {
 }
 
 /* ----------------------------- predição ----------------------------- */
+/** Mesmo caminho do nó `segment` (guia do documento, gabarito no fim do PDF): shared/answer-key.ts. */
 function predictDeterministic(full: string): PredQuestion[] {
-  return segmentQuestions(full).map((q) => ({ stem: q.stem, page: q.page, items: q.items }))
+  return segmentImport(full).questions.map((q) => ({ stem: q.stem, page: q.page, items: q.items }))
 }
 
 async function predictWithAi(pages: { page: number; text: string }[], images: Record<string, PageImageState>): Promise<PredQuestion[]> {
