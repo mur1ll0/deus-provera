@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autoTimeLimitMin, isEligible, presentAs, rankingPeriodStart } from '../simulado'
+import { attemptElapsedMs, autoTimeLimitMin, isEligible, presentAs, rankingPeriodStart } from '../simulado'
 
 describe('autoTimeLimitMin', () => {
   it('soma 2 min/objetiva e 6 min/discursiva', () => {
@@ -50,5 +50,21 @@ describe('rankingPeriodStart (fuso de Brasília)', () => {
   })
   it('geral não tem início', () => {
     expect(rankingPeriodStart('geral')).toBeNull()
+  })
+})
+
+describe('attemptElapsedMs (tempo do simulado)', () => {
+  const hour = 3_600_000
+  it('treino: conta só o tempo ativo — sair do simulado pausa', () => {
+    expect(attemptElapsedMs({ mode: 'treino', wallMs: 5 * hour, activeMs: 90_000, limitMs: null })).toBe(90_000)
+  })
+  it('prova: relógio de parede, não pausa ao sair', () => {
+    expect(attemptElapsedMs({ mode: 'prova', wallMs: 20 * 60_000, activeMs: 90_000, limitMs: 30 * 60_000 })).toBe(20 * 60_000)
+  })
+  it('nunca passa do limite nem da duração real', () => {
+    expect(attemptElapsedMs({ mode: 'prova', wallMs: 2 * hour, activeMs: 0, limitMs: hour })).toBe(hour)
+    expect(attemptElapsedMs({ mode: 'treino', wallMs: 60_000, activeMs: 2 * hour, limitMs: null })).toBe(60_000)
+    expect(attemptElapsedMs({ mode: 'treino', wallMs: 5 * hour, activeMs: 2 * hour, limitMs: hour })).toBe(hour)
+    expect(attemptElapsedMs({ mode: 'treino', wallMs: -5, activeMs: -5, limitMs: null })).toBe(0)
   })
 })

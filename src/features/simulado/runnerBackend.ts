@@ -41,6 +41,8 @@ export interface RunnerBackend {
   /** Revela o gabarito da pergunta (treino com correção imediata); `checked` = autocorreção da discursiva. */
   reveal: (item: QuestionItem, current: ItemAnswer, checked?: boolean[]) => Promise<{ item: QuestionItem; answer: Partial<ItemAnswer> }>
   finish: (state: RunnerState) => Promise<void>
+  /** Envia já o que estiver na fila (ao sair do simulado ou esconder a aba). */
+  flush: () => void
   /** Estado do salvamento (indicador no topo). */
   subscribe: (fn: (s: SaveStatus) => void) => () => void
 }
@@ -76,6 +78,7 @@ export function localBackend(attempt: SimuladoAttempt, store: StoreApi, byId: Ma
       const graded = autoGrade({ ...attempt, ...s, finishedAt: new Date(at).toISOString() }, byId)
       store.saveAttempt({ ...graded, points: computeAttemptScore(graded, byId, store.me.id).total })
     },
+    flush: () => {},
     subscribe: () => () => {},
   }
 }
@@ -177,6 +180,7 @@ export function remoteBackend(opts: { attemptId: string; limitMs: number | null;
       await flush()
       await postFinish(attemptId)
     },
+    flush: () => void flush(),
     subscribe: (fn) => {
       listeners.add(fn)
       return () => listeners.delete(fn)

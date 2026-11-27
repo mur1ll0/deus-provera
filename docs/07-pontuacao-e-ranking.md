@@ -57,7 +57,7 @@ Janela de 30 dias, respostas corrigidas apenas. Exibida com 1 casa decimal. Com 
 
 | Vetor | Mitigação |
 |---|---|
-| Alterar pontos/tempo pelo cliente | Pontos calculados no servidor a partir de respostas gravadas; tempo total limitado ao prazo |
+| Alterar pontos/tempo pelo cliente | Pontos calculados no servidor a partir de respostas gravadas; tempo total limitado ao prazo (prova) ou à soma do tempo ativo por questão (treino, que pausa ao sair) |
 | Ver gabarito durante a prova | API não envia `correct`/`expected_answer` antes de finalizar uma prova |
 | Responder após o prazo | `deadline_at` no servidor (+15 s de tolerância); respostas atrasadas ignoradas |
 | Criar questões fáceis e farmar | Questões próprias ×0,5; repetição em < 7 dias ×0,25 |

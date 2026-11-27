@@ -37,7 +37,7 @@ Recebe o mesmo corpo da criação. Responde `{ "available": n, "topics": string[
   - `minhas_e_comunidade` soma as **públicas** de outros usuários, nunca as privadas.
 - **Elegibilidade** pelo formato de resposta: `shared/simulado.ts` › `isEligible`.
 - **`prioritizeMistakes`:** sorteia primeiro as questões com alguma pergunta errada (nota < 0,5) em simulados finalizados.
-- **Prazo:** `deadlineAt = startedAt + timeLimitMs + 15 s` de tolerância de rede.
+- **Prazo:** só na prova, `deadlineAt = startedAt + timeLimitMs + 15 s` de tolerância de rede. No treino `deadlineAt = null` (o limite opcional vale sobre o tempo ativo, que pausa ao sair) — treinos antigos com prazo gravado o ignoram.
 - **Gravação:** cria uma linha em `attempt_question` por questão (posição, tempo e marcação).
 
 **Respostas:**
@@ -128,7 +128,7 @@ Só no **treino com `reveal = "imediato"`**; nos outros casos responde `403`.
 
 Disponível só depois de finalizado; antes disso responde `409`.
 
-**200:** `ResultView`, que é `AttemptView` mais `finishedAt`, `totalTimeMs`, `score` (`ScoreDetail`), as notas de todas as respostas, `keys` com o gabarito de **todas** as perguntas e `byTopic: [{ discipline, topic, items, accuracy }]`.
+**200:** `ResultView`, que é `AttemptView` mais `finishedAt`, `totalTimeMs` (prova: `finishedAt − startedAt`; treino: soma do `timeMs` das questões; sempre limitado ao limite e à duração real — `attemptElapsedMs`), `score` (`ScoreDetail`), as notas de todas as respostas, `keys` com o gabarito de **todas** as perguntas e `byTopic: [{ discipline, topic, items, accuracy }]`.
 
 ## POST `/api/simulados/:id/grade/:itemId` — correção posterior (T027)
 

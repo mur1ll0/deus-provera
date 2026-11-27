@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import type { AnswerKind, ItemAnswer, Question, QuestionItem, SimuladoAttempt } from '@shared/domain'
 import { itemMarker } from '@shared/item-label'
+import { attemptElapsedMs } from '@shared/simulado'
 import { useAuth } from '@/app/auth-context'
 import { FullScreen } from '@/app/RequireAuth'
 import { Logo } from '@/components/Logo'
@@ -90,6 +91,9 @@ function LocalRunner({ id }: { id: string }) {
   return <Runner key={attempt.id} attempt={attempt} questions={questions} backend={backend!} />
 }
 
+/** Intervalo do checkpoint do tempo da questão aberta. */
+const CHECKPOINT_MS = 30_000
+
 const blank = (itemId: string): ItemAnswer => ({ itemId, score: null })
 const isAnswered = (a?: ItemAnswer) => Boolean(a?.choiceId || a?.text?.trim())
 
@@ -114,12 +118,43 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
   const [answers, setAnswers] = useState<Record<string, ItemAnswer>>(() => ({ ...attempt.answers }))
   const [timeMs, setTimeMs] = useState<Record<string, number>>(() => ({ ...(attempt.timeMs ?? {}) }))
   const [flagged, setFlagged] = useState<string[]>(() => attempt.flagged ?? [])
-  /** Momento em que a questão atual foi aberta (cronômetro por questão). */
-  const [qStart, setQStart] = useState(() => Date.now())
   const startedAt = useMemo(() => new Date(attempt.startedAt).getTime(), [attempt.startedAt])
   const finished = useRef(false)
 
   const q = qs[idx]
+
+  /*
+   * Cronômetro por questão em TRECHOS ativos: um trecho começa ao abrir a questão (ou ao voltar para a aba) e
+   * fecha ao trocar de questão, finalizar, sair do simulado ou esconder a aba — cada trecho fechado é somado à
+   * questão e enviado ao servidor. Fora do executor nada conta: no treino o tempo total é a soma desses trechos
+   * (pausa ao sair); na prova o total segue o prazo fixo do servidor (attemptElapsedMs, spec 003).
+   * `segRef` é a fonte da contagem; `qStart` só espelha para a tela (null = pausado).
+   */
+  const [qStart, setQStart] = useState<number | null>(() => Date.now())
+  const segRef = useRef(qStart)
+  const curIdRef = useRef(q.id)
+  useEffect(() => {
+    curIdRef.current = q.id
+  }, [q.id])
+  const startSeg = useCallback(() => {
+    const at = Date.now()
+    segRef.current = at
+    setQStart(at)
+  }, [])
+  /** Fecha o trecho aberto, soma à questão e manda ao backend; devolve o tempo do trecho. */
+  const closeSeg = useCallback(
+    (qid: string) => {
+      const from = segRef.current
+      segRef.current = null
+      setQStart(null)
+      if (from === null) return 0
+      const spent = Math.max(0, Date.now() - from)
+      setTimeMs((t) => ({ ...t, [qid]: (t[qid] ?? 0) + spent }))
+      backend.saveTime(qid, spent)
+      return spent
+    },
+    [backend],
+  )
   /** Muda a resposta na tela; `persist` envia ao backend (escolha, texto, dica). */
   const update = useCallback(
     (itemId: string, patch: Partial<ItemAnswer>, persist = true) => {
@@ -142,15 +177,11 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
   const go = useCallback(
     (i: number) => {
       if (i < 0 || i >= qs.length || i === idx) return
-      const at = Date.now()
-      const curId = qs[idx].id
-      const spent = at - qStart
-      setTimeMs((t) => ({ ...t, [curId]: (t[curId] ?? 0) + spent }))
-      backend.saveTime(curId, spent)
-      setQStart(at)
+      closeSeg(qs[idx].id)
+      startSeg()
       setIdx(i)
     },
-    [qs, idx, qStart, backend],
+    [qs, idx, closeSeg, startSeg],
   )
 
   const finish = useCallback(async () => {
@@ -158,24 +189,69 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
     finished.current = true
     setFinishing(true)
     setFinishError(null)
-    const at = Date.now()
     const curId = qs[idx].id
-    const spent = at - qStart
+    const spent = closeSeg(curId)
     const finalTime = { ...timeMs, [curId]: (timeMs[curId] ?? 0) + spent }
-    backend.saveTime(curId, spent)
-    setQStart(at)
+    const activeMs = Object.values(finalTime).reduce((a, b) => a + b, 0)
+    const totalTimeMs = attemptElapsedMs({ mode: cfg.mode, wallMs: clock() - startedAt, activeMs, limitMs: backend.limitMs })
     try {
-      await backend.finish({ answers, timeMs: finalTime, flagged, totalTimeMs: clock() - startedAt })
+      await backend.finish({ answers, timeMs: finalTime, flagged, totalTimeMs })
       void queryClient.invalidateQueries({ queryKey: ['simulados'] })
       navigate(`/simulados/${attempt.id}/resultado`, { replace: true })
     } catch (err) {
       finished.current = false
       setFinishing(false)
       setFinishError((err as Error).message || 'Não foi possível finalizar. Tente de novo.')
+      if (document.visibilityState !== 'hidden') startSeg()
     }
-  }, [attempt.id, answers, timeMs, flagged, qs, idx, qStart, startedAt, navigate, backend, clock, queryClient])
+  }, [attempt.id, answers, timeMs, flagged, qs, idx, startedAt, navigate, backend, clock, queryClient, cfg.mode, closeSeg, startSeg])
+
+  // Pausa com a aba escondida (troca de aba, celular bloqueado) e retoma ao voltar.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (finished.current) return
+      if (document.visibilityState === 'hidden') {
+        closeSeg(curIdRef.current)
+        backend.flush()
+      } else if (segRef.current === null) startSeg()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [backend, closeSeg, startSeg])
+  // Checkpoint a cada 30 s: se a aba fechar sem aviso, perde no máximo esse trecho.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (finished.current || segRef.current === null) return
+      closeSeg(curIdRef.current)
+      startSeg()
+    }, CHECKPOINT_MS)
+    return () => clearInterval(t)
+  }, [closeSeg, startSeg])
+  // Saiu do executor (botão Sair, voltar do navegador, outro link): fecha o trecho e envia — o tempo para aqui.
+  useEffect(() => {
+    // Remontagem (StrictMode em DEV) reabre o trecho fechado pela limpeza anterior.
+    if (segRef.current === null && !finished.current && document.visibilityState !== 'hidden') startSeg()
+    return () => {
+      if (finished.current) return
+      closeSeg(curIdRef.current)
+      backend.flush()
+    }
+  }, [backend, closeSeg, startSeg])
 
   // Cronômetro: atualiza a tela e, no fim do prazo, finaliza sozinho.
+  const timeMsRef = useRef(timeMs)
+  useEffect(() => {
+    timeMsRef.current = timeMs
+  }, [timeMs])
+  /** Tempo do simulado no instante `at` (relógio do servidor) — mesma regra da tela e do servidor. */
+  const elapsedAt = useCallback(
+    (at: number) => {
+      const open = segRef.current === null ? 0 : Math.max(0, at - backend.clockOffsetMs - segRef.current)
+      const activeMs = Object.values(timeMsRef.current).reduce((a, b) => a + b, 0) + open
+      return attemptElapsedMs({ mode: cfg.mode, wallMs: at - startedAt, activeMs, limitMs: backend.limitMs })
+    },
+    [backend, cfg.mode, startedAt],
+  )
   const finishRef = useRef(finish)
   useEffect(() => {
     finishRef.current = finish
@@ -188,7 +264,7 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
       const at = clock()
       setNow(at)
       if (backend.limitMs === null) return
-      const left = backend.limitMs - (at - startedAt)
+      const left = backend.limitMs - elapsedAt(at)
       for (const min of [5, 1]) {
         if (left <= min * 60_000 && left > 0 && !warned.current.has(min)) {
           warned.current.add(min)
@@ -198,7 +274,7 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
       if (left <= 0) void finishRef.current()
     }, 500)
     return () => clearInterval(t)
-  }, [clock, backend, startedAt])
+  }, [clock, backend, elapsedAt])
   const cardRef = useRef<HTMLDivElement>(null)
   const firstRender = useRef(true)
   useEffect(() => {
@@ -209,10 +285,13 @@ function Runner({ attempt, questions, backend }: { attempt: SimuladoAttempt; que
     cardRef.current?.focus()
   }, [idx])
 
-  const elapsed = now - startedAt
   const limitMs = backend.limitMs
+  // `qStart` é do relógio local; `now`, do servidor.
+  const openMs = qStart === null ? 0 : Math.max(0, now - backend.clockOffsetMs - qStart)
+  const qElapsed = (timeMs[q.id] ?? 0) + openMs
+  const activeMs = Object.values(timeMs).reduce((a, b) => a + b, 0) + openMs
+  const elapsed = attemptElapsedMs({ mode: cfg.mode, wallMs: now - startedAt, activeMs, limitMs })
   const remaining = limitMs ? limitMs - elapsed : null
-  const qElapsed = (timeMs[q.id] ?? 0) + Math.max(0, now - qStart)
 
 
   // Atalhos: ← → navegam; A–E respondem a primeira pergunta de múltipla escolha ainda sem resposta

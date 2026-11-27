@@ -140,6 +140,22 @@ describe('simulados (spec 003)', () => {
     expect(hist.find((h) => h.id === id)).toMatchObject({ status: 'finalizado', points: s1.total, questions: 10 })
   })
 
+  it('treino pausa ao sair: sem prazo de parede e tempo total = soma do tempo ativo por questão', async () => {
+    const { id, deadlineAt } = await createSimulado(me, base({ mode: 'treino', reveal: 'final', timeLimitMin: 1 }))
+    expect(deadlineAt).toBeNull()
+    // Treino antigo com prazo gravado e já vencido: continua aberto (o limite vale sobre o tempo ativo).
+    await db().update(schema.attempt).set({ startedAt: new Date(Date.now() - 3_600_000), deadlineAt: new Date(Date.now() - 1000) }).where(eq(schema.attempt.id, id))
+    const view = await getSimulado(me, id)
+    expect(view.deadlineAt).toBeNull()
+    const q0 = view.questions[0]
+    await saveAnswer(me, id, q0.items[0].id, { choiceId: q0.items[0].alternatives![0].id })
+    await saveProgress(me, id, q0.id, { timeMsDelta: 7000 })
+    await saveProgress(me, id, view.questions[1].id, { timeMsDelta: 5000 })
+    await finishSimulado(me, id)
+    const r = await getResult(me, id)
+    expect(r.totalTimeMs).toBe(12_000) // 1 h de parede, mas só 12 s com o simulado aberto
+  })
+
   it('treino com correção imediata: revela, trava a resposta e autocorrige a discursiva', async () => {
     const { id } = await createSimulado(me, base({ mode: 'treino', reveal: 'imediato', aiHints: true, topics: ['Discursivas', 'Assunto A'], count: 20 }))
     const view = await getSimulado(me, id)

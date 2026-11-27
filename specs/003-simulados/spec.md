@@ -94,6 +94,7 @@ Como estudante, quero priorizar as questões que errei, misturar as minhas quest
 - **Duas abas na mesma prova**: as respostas são idempotentes por `(attemptId, questionId)` e a última escrita vence. O finish também é idempotente.
 - **Finalizar sem responder**: questões em branco valem 0 (objetiva: `score = 0`; discursiva sem texto: `score = 0`, não fica pendente).
 - **Treino sem limite de tempo**: o cronômetro conta para cima e nunca auto-finaliza.
+- **Sair do simulado sem finalizar** (revisão 2026-11-27): o tempo da questão aberta é salvo na saída e nada conta enquanto o estudante está fora do executor (outra tela, outro simulado, aba escondida ou fechada). No **treino** o tempo total é a soma do tempo ativo por questão: ao continuar pelo histórico, o cronômetro retoma de onde parou. Se houver limite no treino, ele vale sobre esse tempo ativo (sem `deadlineAt`). Na **prova** o prazo é fixo e continua correndo (ver "Fora de escopo"): ao voltar depois do prazo, a prova é finalizada.
 - **Tentativa abandonada** (não finalizada): não pontua e aparece no histórico como "não finalizado". É expirada após 24 h.
 - **Prova com discursivas**: os pontos das discursivas só entram quando forem corrigidas. O ledger recebe lançamentos de ajuste.
 
@@ -112,14 +113,14 @@ Como estudante, quero priorizar as questões que errei, misturar as minhas quest
 **Regras no servidor**
 - **FR-009**: O servidor DEVE sortear as questões (`ORDER BY random()` com filtros) e gravar a lista na tentativa. O cliente não escolhe as questões da prova.
 - **FR-010**: Na prova, o servidor DEVE forçar `reveal = final`, `aiHints = false` e `timeLimitMin` não nulo.
-- **FR-011**: O servidor DEVE calcular `deadlineAt = startedAt + timeLimit + 15 s` e ignorar respostas recebidas depois desse prazo.
+- **FR-011**: Na prova, o servidor DEVE calcular `deadlineAt = startedAt + timeLimit + 15 s` e ignorar respostas recebidas depois desse prazo. No treino não há prazo de parede (`deadlineAt = null`).
 - **FR-012**: O servidor NÃO DEVE enviar o gabarito (`correct`, `explanation`, `expectedAnswer`, `keyPoints`) de uma prova em andamento. No treino com revelação imediata, o gabarito de uma questão só é enviado via `reveal` daquela questão.
 - **FR-013**: O servidor DEVE salvar cada resposta de forma incremental e idempotente (`PUT …/answers/:questionId`), somando `timeMs`.
 - **FR-014**: O servidor DEVE corrigir as objetivas automaticamente na finalização e calcular a pontuação com `scoreSimulado` (`shared/scoring.ts`), gravando em `attempt` e no `points_ledger`.
 - **FR-015**: A finalização DEVE ser idempotente: chamar duas vezes não gera pontos duplicados.
 
 **Executor**
-- **FR-016**: O executor DEVE mostrar o tempo total (regressivo se houver limite) e o tempo da questão atual, e registrar o tempo gasto em cada questão.
+- **FR-016**: O executor DEVE mostrar o tempo total (regressivo se houver limite) e o tempo da questão atual, e registrar o tempo gasto em cada questão. O tempo só conta com o executor aberto e visível: sair, trocar de aba ou fechar a aba pausa o tempo da questão; no treino o total também pausa (`attemptElapsedMs` em `shared/simulado.ts`).
 - **FR-017**: O executor DEVE finalizar automaticamente quando o tempo acabar.
 - **FR-018**: O executor DEVE oferecer um navegador de questões com estados (atual, respondida, marcada para revisar e, no treino imediato, certa/errada).
 - **FR-019**: O executor DEVE permitir marcar a questão para revisar, riscar alternativas e usar os atalhos A–E (escolher) e ←/→ (navegar), ignorando os atalhos quando o foco está num campo de texto.
@@ -157,7 +158,7 @@ Como estudante, quero priorizar as questões que errei, misturar as minhas quest
 
 - Simulados compartilhados ou competitivos em tempo real entre turmas (Fase 3).
 - Caderno de erros persistente e flashcards (Fase 3). Aqui só existem "Treinar o que errei" e "Priorizar o que errei".
-- Pausar a prova (o cronômetro da prova não pausa).
+- Pausar a prova (o cronômetro da prova não pausa; o treino pausa ao sair, desde 2026-11-27).
 - Questões com imagem renderizada (só a descrição textual no MVP; imagem real na Fase 2).
 - Modo offline.
 

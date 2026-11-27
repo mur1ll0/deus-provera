@@ -88,8 +88,9 @@ export const listRemote = () => unwrap(sim.index.$get())
 
 export const putAnswer = (id: string, itemId: string, body: { choiceId?: string | null; text?: string | null; usedHint?: true }) =>
   unwrap(sim[':id'].answers[':itemId'].$put({ param: { id, itemId }, json: body }))
+/** `keepalive`: o tempo da questão aberta ainda chega ao servidor quando a aba fecha ou o usuário sai. */
 export const putProgress = (id: string, questionId: string, body: { timeMsDelta?: number; flagged?: boolean }) =>
-  unwrap(sim[':id'].questions[':questionId'].$put({ param: { id, questionId }, json: body }))
+  unwrap(sim[':id'].questions[':questionId'].$put({ param: { id, questionId }, json: body }, { init: { keepalive: true } }))
 export const postReveal = (id: string, itemId: string, checked?: boolean[]) => unwrap(sim[':id'].reveal[':itemId'].$post({ param: { id, itemId }, json: { checked } }))
 export const postFinish = (id: string) => unwrap(sim[':id'].finish.$post({ param: { id } }))
 export const postGrade = (id: string, itemId: string, checked: boolean[]) => unwrap(sim[':id'].grade[':itemId'].$post({ param: { id, itemId }, json: { checked } }))

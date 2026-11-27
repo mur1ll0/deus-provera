@@ -5,7 +5,7 @@ import { inspectText } from '../../shared/guardrails'
 import type { z } from 'zod'
 import type { answerInput, AnswerView, AttemptView, GradeResult, HistoryItem, ItemKey, PreviewView, progressInput, PublicQuestion, ResultView, RevealResult, ScoreDetail } from '../../shared/schemas/simulado'
 import { scoreSimulado } from '../../shared/scoring'
-import { autoTimeLimitMin, isEligible, presentAs } from '../../shared/simulado'
+import { attemptElapsedMs, autoTimeLimitMin, isEligible, presentAs } from '../../shared/simulado'
 import { AiQuotaExhaustedError, AiUnavailableError } from '../ai/client'
 import { explainQuestion, gradeDiscursive, hintFor, type QuestionForAi } from '../ai/services'
 import { db, schema } from '../db/client'
@@ -95,7 +95,8 @@ export async function createSimulado(userId: string, input: Config): Promise<{ i
   const timeLimitMs = cfg.timeLimitMin ? cfg.timeLimitMin * 60_000 : null
   const id = crypto.randomUUID()
   const startedAt = new Date()
-  const deadlineAt = timeLimitMs ? new Date(startedAt.getTime() + timeLimitMs + NETWORK_GRACE_MS) : null
+  // Prazo fixo só na prova; no treino o limite (opcional) vale sobre o tempo ATIVO, que pausa ao sair (attemptElapsedMs).
+  const deadlineAt = cfg.mode === 'prova' && timeLimitMs ? new Date(startedAt.getTime() + timeLimitMs + NETWORK_GRACE_MS) : null
   const d = db()
   await d.batch([
     d.insert(attempt).values({ id, userId, mode: cfg.mode, config: cfg as unknown as Record<string, unknown>, questionIds: picked.map((p) => p.id), timeLimitMs, startedAt, deadlineAt }),
@@ -195,6 +196,9 @@ async function progressOf(attemptId: string) {
   return { answers: new Map(answers.map((x) => [x.itemId, x])), perQuestion }
 }
 
+/** Prazo de parede (só prova). Treinos antigos podem ter `deadline_at` gravado: é ignorado, pois o treino pausa ao sair. */
+const provaDeadline = (a: AttemptRow) => (a.mode === 'prova' ? a.deadlineAt : null)
+
 export async function getSimulado(userId: string, id: string): Promise<AttemptView> {
   const a = await ownedAttempt(userId, id)
   if (a.finishedAt) throw new HTTPException(409, { message: 'finalizado' })
@@ -215,7 +219,7 @@ export async function getSimulado(userId: string, id: string): Promise<AttemptVi
     config: cfg,
     status: 'em_andamento',
     startedAt: a.startedAt.toISOString(),
-    deadlineAt: a.deadlineAt?.toISOString() ?? null,
+    deadlineAt: provaDeadline(a)?.toISOString() ?? null,
     timeLimitMs: a.timeLimitMs,
     serverNow: new Date().toISOString(),
     questions: a.questionIds.map((qid) => publicQuestion(userId, cfg, loaded, qid)).filter((q): q is PublicQuestion => !!q),
@@ -230,7 +234,8 @@ export async function getSimulado(userId: string, id: string): Promise<AttemptVi
 
 function assertOpen(a: AttemptRow) {
   if (a.finishedAt) throw new HTTPException(409, { message: 'Este simulado já foi finalizado.' })
-  if (a.deadlineAt && Date.now() > a.deadlineAt.getTime()) throw new HTTPException(409, { message: 'O tempo do simulado acabou.' })
+  const deadline = provaDeadline(a)
+  if (deadline && Date.now() > deadline.getTime()) throw new HTTPException(409, { message: 'O tempo do simulado acabou.' })
 }
 
 /** Pergunta da tentativa + como é apresentada; 404 se não pertence ao simulado. */
@@ -278,7 +283,7 @@ export async function saveProgress(userId: string, id: string, questionId: strin
   if (a.finishedAt) throw new HTTPException(409, { message: 'Este simulado já foi finalizado.' })
   if (!a.questionIds.includes(questionId)) throw new HTTPException(404, { message: 'Questão não encontrada neste simulado.' })
   // O total por questão nunca passa da duração real da tentativa no servidor.
-  const cap = Math.min(Date.now(), a.deadlineAt?.getTime() ?? Infinity) - a.startedAt.getTime()
+  const cap = Math.min(Date.now(), provaDeadline(a)?.getTime() ?? Infinity) - a.startedAt.getTime()
   const [row] = await db()
     .update(attemptQuestion)
     .set({
@@ -394,7 +399,12 @@ export async function finishSimulado(userId: string, id: string): Promise<ScoreD
   const cfg = configOf(a)
   const [loaded, prog] = await Promise.all([loadQuestions(a.questionIds), progressOf(a.id)])
   const finishedAt = new Date()
-  const totalTimeMs = Math.max(0, Math.min(finishedAt.getTime() - a.startedAt.getTime(), a.timeLimitMs ?? Number.MAX_SAFE_INTEGER))
+  const totalTimeMs = attemptElapsedMs({
+    mode: cfg.mode,
+    wallMs: finishedAt.getTime() - a.startedAt.getTime(),
+    activeMs: prog.perQuestion.reduce((acc, p) => acc + p.timeMs, 0),
+    limitMs: a.timeLimitMs,
+  })
 
   const finals = new Map<string, FinalAnswer>()
   const upserts: (typeof attemptAnswer.$inferInsert)[] = []

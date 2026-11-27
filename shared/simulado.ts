@@ -1,4 +1,4 @@
-import type { AnswerFormat, AnswerKind, Question, QuestionItem } from './domain'
+import type { AnswerFormat, AnswerKind, Question, QuestionItem, SimuladoMode } from './domain'
 
 /**
  * Regras do simulado compartilhadas entre cliente (prévia) e servidor (oficial).
@@ -35,6 +35,18 @@ export function isEligible(q: Pick<Question, 'items'>, format: AnswerFormat): bo
 export function autoTimeLimitMin(kinds: AnswerKind[]): number {
   const total = kinds.reduce((acc, k) => acc + MINUTES_PER[k], 0)
   return Math.max(MIN_AUTO_TIME_MIN, total)
+}
+
+/**
+ * Tempo do simulado (spec 003, FR-016/FR-024).
+ * - **Prova:** relógio de parede desde `startedAt`, com prazo fixo — não pausa ao sair (como um exame real).
+ * - **Treino:** só o tempo ATIVO, isto é, a soma do tempo por questão; sair do simulado (ou esconder a aba) pausa.
+ * Nunca passa da duração real da tentativa nem do limite, quando houver.
+ */
+export function attemptElapsedMs(s: { mode: SimuladoMode; wallMs: number; activeMs: number; limitMs: number | null }): number {
+  const wall = Math.max(0, s.wallMs)
+  const raw = s.mode === 'prova' ? wall : Math.min(Math.max(0, s.activeMs), wall)
+  return Math.min(raw, s.limitMs ?? Number.MAX_SAFE_INTEGER)
 }
 
 /** Início do período do ranking em UTC, considerando o fuso de Brasília (UTC−3, sem horário de verão). */
